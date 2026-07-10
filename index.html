@@ -4100,10 +4100,8 @@
 
     <!-- CORE LOGIC: PERSISTENCE, API CONTEXT, ROUTING & CHART CREATION -->
     <script>
-        // API Base URL (Detects server port)
-        const API_URL = (window.location.protocol.startsWith('file') || !window.location.host)
-            ? 'http://localhost:5000/api'
-            : `${window.location.protocol}//${window.location.host}/api`;
+        // API Base URL
+        const API_URL = 'https://rfq-backend.vercel.app/api';
         let serverMode = false;
         let currentUser = "Vijay Mehta";
         let currentRole = "Procurement Admin";
