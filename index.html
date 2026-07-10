@@ -4623,7 +4623,7 @@
         // Core App Initialization Check
         async function checkServerConnection() {
             try {
-                const response = await fetch(`${API_URL}/vendors`, { method: 'GET', signal: AbortSignal.timeout(3000) });
+                const response = await fetch(`${API_URL}/vendors`, { method: 'GET', signal: AbortSignal.timeout(10000) });
                 if (response.ok) {
                     serverMode = true;
                     document.getElementById('server-mode-indicator').className = "badge-live-server";
