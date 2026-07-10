@@ -27,6 +27,20 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'semco_smart_rfq_jwt_secure_key_2026';
 
+const getFrontendUrl = (req) => {
+  if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL;
+  if (req && req.headers.origin) {
+    return req.headers.origin;
+  }
+  if (req && req.headers.referer) {
+    try {
+      const refUrl = new URL(req.headers.referer);
+      return `${refUrl.protocol}//${refUrl.host}`;
+    } catch (_) {}
+  }
+  return 'https://semcogroupsrfq.vercel.app';
+};
+
 // ─── Directories ─────────────────────────────────────────
 const DB_DIR = path.join(__dirname, 'data');
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
@@ -1417,7 +1431,7 @@ app.post('/api/rfqs/distribute', async (req, res) => {
           .run(rfq_id, vendorId);
       }
 
-      const targetUrl = `http://localhost:${PORT}/index.html?token=${token}`;
+      const targetUrl = `${getFrontendUrl(req)}/index.html?token=${token}`;
       const subject = `Request For Quotation: ${rfq.rfq_number} — SEMCO Groups`;
       const emailHtml = `
         <div style="font-family:'Inter','Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
@@ -2505,7 +2519,7 @@ app.post('/api/transport-requests/distribute', async (req, res) => {
 
       if (initialStatus === 'Sent') {
         // Send registration and request access email immediately
-        const portalUrl = `http://localhost:${PORT}/index.html?transport_token=${token}`;
+        const portalUrl = `${getFrontendUrl(req)}/index.html?transport_token=${token}`;
         const subject = `New Transport Bid Request: ${request.request_number} — SEMCO Groups`;
         const emailHtml = `
           <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
@@ -2858,7 +2872,7 @@ app.post('/api/transport-requests/:id/remind', async (req, res) => {
     const sentTransporters = [];
 
     for (const d of pending) {
-      const portalUrl = `http://localhost:${PORT}/index.html?transport_token=${d.token}`;
+      const portalUrl = `${getFrontendUrl(req)}/index.html?transport_token=${d.token}`;
       const subject = `REMINDER: Transport Bid Request ${request.request_number} — SEMCO Groups`;
       const emailHtml = `
         <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
@@ -3367,7 +3381,7 @@ app.post('/api/rfqs/:id/re-open', async (req, res) => {
         .run(0, rfq.id, d.vendor_id);
 
       // 4. Send email
-      const portalUrl = `http://localhost:${PORT}/index.html?token=${d.token}`;
+      const portalUrl = `${getFrontendUrl(req)}/index.html?token=${d.token}`;
       const subject = `RE-OPENED: Request For Quotation ${rfq.rfq_number} — SEMCO Groups`;
       
       const pad = (n) => n.toString().padStart(2, '0');
@@ -3466,7 +3480,7 @@ app.post('/api/transport-requests/:id/re-open', async (req, res) => {
         .run(0, request.id, d.transporter_id);
 
       // 4. Send email
-      const portalUrl = `http://localhost:${PORT}/index.html?transport_token=${d.token}`;
+      const portalUrl = `${getFrontendUrl(req)}/index.html?transport_token=${d.token}`;
       const subject = `RE-OPENED: Transport Bid Request ${request.request_number} — SEMCO Groups`;
 
       const pad = (n) => n.toString().padStart(2, '0');
@@ -3565,7 +3579,7 @@ async function checkRemindersAndExpirations() {
         db.prepare("UPDATE transport_requests SET status = 'Sent' WHERE id = ? AND status = 'Scheduled'").run(d.request_id);
 
         // Send email
-        const portalUrl = `http://localhost:${PORT}/index.html?transport_token=${d.token}`;
+        const portalUrl = `${getFrontendUrl(null)}/index.html?transport_token=${d.token}`;
         const subject = `New Transport Bid Request: ${d.request_number} — SEMCO Groups`;
         
         let expiresText = '-';
@@ -3649,7 +3663,7 @@ async function checkRemindersAndExpirations() {
       if (minutesLeft <= 60 && minutesLeft > 30 && d.reminder_60_sent === 0) {
         db.prepare("UPDATE transport_distributions SET reminder_60_sent = ? WHERE request_id = ? AND transporter_id = ?").run(1, d.request_id, d.transporter_id);
         
-        const portalUrl = `http://localhost:${PORT}/index.html?transport_token=${d.token}`;
+        const portalUrl = `${getFrontendUrl(null)}/index.html?transport_token=${d.token}`;
         const subject = `⏰ REMINDER: 1 hour left to quote for Transport Request ${d.request_number}`;
         const emailHtml = `
           <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
@@ -3681,7 +3695,7 @@ async function checkRemindersAndExpirations() {
       if (minutesLeft <= 30 && minutesLeft > 0 && d.reminder_30_sent === 0) {
         db.prepare("UPDATE transport_distributions SET reminder_30_sent = ? WHERE request_id = ? AND transporter_id = ?").run(1, d.request_id, d.transporter_id);
         
-        const portalUrl = `http://localhost:${PORT}/index.html?transport_token=${d.token}`;
+        const portalUrl = `${getFrontendUrl(null)}/index.html?transport_token=${d.token}`;
         const subject = `⚠️ URGENT REMINDER: 30 minutes left to quote for Transport Request ${d.request_number}`;
         const emailHtml = `
           <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
@@ -3746,7 +3760,7 @@ async function checkRemindersAndExpirations() {
       if (minutesLeft <= 60 && minutesLeft > 30 && d.reminder_60_sent === 0) {
         db.prepare("UPDATE rfq_distributions SET reminder_60_sent = ? WHERE rfq_id = ? AND vendor_id = ?").run(1, d.rfq_id, d.vendor_id);
         
-        const portalUrl = `http://localhost:${PORT}/index.html?token=${d.token}`;
+        const portalUrl = `${getFrontendUrl(null)}/index.html?token=${d.token}`;
         const subject = `⏰ REMINDER: 1 hour left to quote for RFQ ${d.rfq_number}`;
         const emailHtml = `
           <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
@@ -3779,7 +3793,7 @@ async function checkRemindersAndExpirations() {
       if (minutesLeft <= 30 && minutesLeft > 0 && d.reminder_30_sent === 0) {
         db.prepare("UPDATE rfq_distributions SET reminder_30_sent = ? WHERE rfq_id = ? AND vendor_id = ?").run(1, d.rfq_id, d.vendor_id);
         
-        const portalUrl = `http://localhost:${PORT}/index.html?token=${d.token}`;
+        const portalUrl = `${getFrontendUrl(null)}/index.html?token=${d.token}`;
         const subject = `⚠️ URGENT REMINDER: 30 minutes left to quote for RFQ ${d.rfq_number}`;
         const emailHtml = `
           <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
@@ -4025,7 +4039,7 @@ app.post('/api/send-platform-invite', async (req, res) => {
         : `Welcome to SEMCO Smart RFQ Platform — Transporter Registration Guide [Ref #${randId}]`;
 
       const registerToken = jwt.sign({ id: r.id, type }, JWT_SECRET, { expiresIn: '30d' });
-      const registerUrl = `http://localhost:${PORT}/index.html?register_token=${registerToken}`;
+      const registerUrl = `${getFrontendUrl(req)}/index.html?register_token=${registerToken}`;
 
       const emailHtml = buildPlatformInviteEmail(contactName, type, registerUrl);
       const mailOk = await sendMailViaSmtp(r.email, subject, emailHtml);
@@ -4179,7 +4193,7 @@ app.post('/api/rfqs/:id/remind', async (req, res) => {
     const sentVendors = [];
 
     for (const d of pending) {
-      const portalUrl = `http://localhost:${PORT}/index.html?token=${d.token}`;
+      const portalUrl = `${getFrontendUrl(req)}/index.html?token=${d.token}`;
       const subject = `REMINDER: ${rfq.rfq_number} — SEMCO Groups`;
       const emailHtml = `
         <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
