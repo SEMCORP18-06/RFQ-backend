@@ -282,6 +282,9 @@ class Database {
 
   async connectMongo(uri) {
     try {
+      if (mongoose.connection.readyState === 1) {
+        return;
+      }
       console.log('[MongoDB] Connecting to database...');
       await mongoose.connect(uri);
       console.log('[MongoDB] Connected successfully.');

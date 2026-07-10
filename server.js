@@ -268,6 +268,20 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname)));
 
+// Middleware to ensure database is connected before processing request on Vercel
+let mongoConnected = false;
+app.use(async (req, res, next) => {
+  if (process.env.MONGODB_URI && !mongoConnected) {
+    try {
+      await db.connectMongo(process.env.MONGODB_URI);
+      mongoConnected = true;
+    } catch (err) {
+      console.error('[MongoDB Middleware Error]:', err.message);
+    }
+  }
+  next();
+});
+
 // ═══════════════════════════════════════════════════════════
 //  DATABASE SCHEMA
 // ═══════════════════════════════════════════════════════════
@@ -4214,7 +4228,12 @@ app.post('/api/rfqs/:id/remind', async (req, res) => {
 // ═══════════════════════════════════════════════════════════
 async function startServer() {
   if (process.env.MONGODB_URI) {
-    await db.connectMongo(process.env.MONGODB_URI);
+    try {
+      await db.connectMongo(process.env.MONGODB_URI);
+      mongoConnected = true;
+    } catch (err) {
+      console.error('[MongoDB Init Error]:', err.message);
+    }
   }
   seedDefaults();
 
@@ -4232,5 +4251,13 @@ async function startServer() {
     startReminderScheduler();
   });
 }
-startServer();
+
+if (require.main === module || !process.env.VERCEL) {
+  startServer();
+} else {
+  // Trigger schema setup synchronously on serverless boot
+  seedDefaults();
+}
+
+module.exports = app;
 // Touched to trigger database reload under watch mode (v2)
