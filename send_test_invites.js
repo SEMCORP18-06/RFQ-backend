@@ -13,12 +13,12 @@ const fs = require('fs');
 const path = require('path');
 
 const smtpTransporter = nodemailer.createTransport({
-  host: 'smtp.office365.com',
-  port: 587,
-  secure: false,
+  host: process.env.SMTP_HOST || 'smtp.office365.com',
+  port: parseInt(process.env.SMTP_PORT || '587', 10),
+  secure: process.env.SMTP_SECURE === 'true',
   auth: {
-    user: 'umesh.p@semcogroups.com',
-    pass: 'U@$emco@111'
+    user: process.env.SMTP_USER || 'umesh.p@semcogroups.com',
+    pass: process.env.SMTP_PASS || 'U@$emco@111'
   },
   tls: {
     ciphers: 'SSLv3',
@@ -47,7 +47,7 @@ async function sendMail(to, subject, html) {
       });
     }
     await smtpTransporter.sendMail({
-      from: '"SEMCO Groups" <umesh.p@semcogroups.com>',
+      from: `"${process.env.SMTP_FROM_NAME || 'SEMCO Groups'}" <${process.env.SMTP_USER || 'umesh.p@semcogroups.com'}>`,
       to,
       subject,
       html,
