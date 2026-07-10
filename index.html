@@ -11304,6 +11304,10 @@
             const ctx = document.getElementById('chartComparativeQuotes');
             if (!ctx) return;
 
+            const existing = Chart.getChart(ctx);
+            if (existing) {
+                existing.destroy();
+            }
             if (chartInstanceComparative) {
                 chartInstanceComparative.destroy();
             }
@@ -11999,7 +12003,12 @@
                 return colors[idx % colors.length];
             });
 
-            const ctxPrice = document.getElementById('chartPriceComparison').getContext('2d');
+            const canvasPrice = document.getElementById('chartPriceComparison');
+            if (canvasPrice) {
+                const existing = Chart.getChart(canvasPrice);
+                if (existing) existing.destroy();
+            }
+            const ctxPrice = canvasPrice.getContext('2d');
             chartInstancePrice = new Chart(ctxPrice, {
                 type: 'bar',
                 data: {
@@ -12054,7 +12063,12 @@
             const sData = sLabels.map(l => statusDistribution[l]);
             const sColors = sLabels.map(l => statusColors[l] || accentSecondary);
 
-            const ctxStatus = document.getElementById('chartStatusDistribution').getContext('2d');
+            const canvasStatus = document.getElementById('chartStatusDistribution');
+            if (canvasStatus) {
+                const existing = Chart.getChart(canvasStatus);
+                if (existing) existing.destroy();
+            }
+            const ctxStatus = canvasStatus.getContext('2d');
             chartInstanceStatus = new Chart(ctxStatus, {
                 type: 'doughnut',
                 data: {
@@ -12127,7 +12141,12 @@
 
             document.getElementById('dashboard-savings-trend-title').innerHTML = `<i class="fa-solid fa-timeline text-primary me-2"></i> ${savingsTitleText}`;
 
-            const ctxSavings = document.getElementById('chartSavingsTrend').getContext('2d');
+            const canvasSavings = document.getElementById('chartSavingsTrend');
+            if (canvasSavings) {
+                const existing = Chart.getChart(canvasSavings);
+                if (existing) existing.destroy();
+            }
+            const ctxSavings = canvasSavings.getContext('2d');
             chartInstanceSavings = new Chart(ctxSavings, {
                 type: 'line',
                 data: {
@@ -12199,7 +12218,12 @@
 
             document.getElementById('dashboard-performance-trend-title').innerHTML = `<i class="fa-solid fa-gauge-high text-primary me-2"></i> ${perfTitleText}`;
 
-            const ctxPerf = document.getElementById('chartPerformanceTrend').getContext('2d');
+            const canvasPerf = document.getElementById('chartPerformanceTrend');
+            if (canvasPerf) {
+                const existing = Chart.getChart(canvasPerf);
+                if (existing) existing.destroy();
+            }
+            const ctxPerf = canvasPerf.getContext('2d');
             chartInstancePerf = new Chart(ctxPerf, {
                 type: 'radar',
                 data: {
