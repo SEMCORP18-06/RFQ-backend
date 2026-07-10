@@ -1303,7 +1303,7 @@
         }
 
         /* Mobile & Tablet Responsiveness */
-        @media (max-width: 991.98px) {
+        @media (max-width: 768px) {
             #sidebar {
                 left: -260px;
                 box-shadow: none;
@@ -4858,7 +4858,7 @@
             document.addEventListener('click', (e) => {
                 const sidebar = document.getElementById('sidebar');
                 const toggle = document.getElementById('sidebar-toggle');
-                if (window.innerWidth < 992 && sidebar && !sidebar.classList.contains('collapsed')) {
+                if (window.innerWidth <= 768 && sidebar && !sidebar.classList.contains('collapsed')) {
                     if (toggle && !sidebar.contains(e.target) && !toggle.contains(e.target)) {
                         sidebar.classList.add('collapsed');
                         document.getElementById('content-wrapper').classList.add('expanded');
@@ -5187,7 +5187,7 @@
             if (targetPanel) targetPanel.classList.add('active');
 
             // Collapse sidebar on mobile
-            if (window.innerWidth < 992) {
+            if (window.innerWidth <= 768) {
                 document.getElementById('sidebar').classList.add('collapsed');
                 document.getElementById('content-wrapper').classList.add('expanded');
             } else {
