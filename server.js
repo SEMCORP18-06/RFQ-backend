@@ -721,7 +721,7 @@ app.get('/api/dashboard/stats', (_req, res) => {
       }
     });
 
-    const sortedRFQs = [...rfqs].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const sortedRFQs = [...rfqs].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
     const latestRFQ = sortedRFQs.find(rfq => dists.some(d => d.rfq_id === rfq.id && parseFloat(d.final_cost) > 0));
     
     let vPriceComparison = { rfq_number: '', labels: [], data: [], created_at: '1970-01-01T00:00:00.000Z' };
@@ -854,7 +854,7 @@ app.get('/api/dashboard/stats', (_req, res) => {
       }
     });
 
-    const sortedTRs = [...transportRequests].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const sortedTRs = [...transportRequests].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
     const latestTR = sortedTRs.find(req => tDists.some(d => d.request_id === req.id && parseFloat(d.final_cost) > 0));
     
     let tPriceComparison = { request_number: '', labels: [], data: [], created_at: '1970-01-01T00:00:00.000Z' };

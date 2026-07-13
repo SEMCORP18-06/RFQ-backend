@@ -474,16 +474,16 @@ class PreparedStatement {
     // ─── 2. VENDORS QUERIES ───
     if (sql.includes('SELECT id FROM vendors ORDER BY id DESC LIMIT 1')) {
       if (this.db.data.vendors.length === 0) return undefined;
-      const sorted = [...this.db.data.vendors].sort((a, b) => b.id.localeCompare(a.id));
+      const sorted = [...this.db.data.vendors].sort((a, b) => (b.id || '').localeCompare(a.id || ''));
       return { id: sorted[0].id };
     }
 
     if (sql.includes('FROM vendors WHERE archived = 1')) {
-      return [...this.db.data.vendors].filter(v => v.archived === 1).sort((a, b) => a.name.localeCompare(b.name));
+      return [...this.db.data.vendors].filter(v => v.archived === 1).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     }
 
     if (sql.includes('FROM vendors ORDER BY name ASC')) {
-      return [...this.db.data.vendors].filter(v => !v.archived).sort((a, b) => a.name.localeCompare(b.name));
+      return [...this.db.data.vendors].filter(v => !v.archived).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     }
 
     if (sql.includes('SELECT name FROM vendors WHERE id = ?') || sql.includes('SELECT name FROM vendors WHERE id=?')) {
@@ -660,7 +660,7 @@ class PreparedStatement {
     // ─── 3. RFQS QUERIES ───
     if (sql.includes('SELECT r.*') && sql.includes('FROM rfqs r')) {
       const rfqs = [...this.db.data.rfqs];
-      rfqs.sort((a, b) => b.created_at.localeCompare(a.created_at));
+      rfqs.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
       return rfqs.map(r => {
         const item_count = this.db.data.rfq_items.filter(x => x.rfq_id === r.id).length;
         const vendor_sent_count = this.db.data.rfq_distributions.filter(x => x.rfq_id === r.id).length;
@@ -1264,12 +1264,12 @@ class PreparedStatement {
     }
 
     if (sql.includes('FROM audit_trail ORDER BY timestamp DESC')) {
-      const sorted = [...this.db.data.audit_trail].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      const sorted = [...this.db.data.audit_trail].sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
       return sorted.slice(0, 50);
     }
 
     if (sql.includes('FROM notifications ORDER BY timestamp DESC')) {
-      const sorted = [...this.db.data.notifications].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      const sorted = [...this.db.data.notifications].sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
       return sorted.slice(0, 20);
     }
 
@@ -1493,16 +1493,16 @@ class PreparedStatement {
 
     if (sql.includes('SELECT id FROM transporters ORDER BY id DESC LIMIT 1')) {
       if (this.db.data.transporters.length === 0) return undefined;
-      const sorted = [...this.db.data.transporters].sort((a, b) => b.id.localeCompare(a.id));
+      const sorted = [...this.db.data.transporters].sort((a, b) => (b.id || '').localeCompare(a.id || ''));
       return { id: sorted[0].id };
     }
 
     if (sql.includes('FROM transporters WHERE archived = 1')) {
-      return [...this.db.data.transporters].filter(t => t.archived === 1).sort((a, b) => a.name.localeCompare(b.name));
+      return [...this.db.data.transporters].filter(t => t.archived === 1).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     }
 
     if (sql.includes('FROM transporters') && sql.includes('ORDER BY name')) {
-      return [...this.db.data.transporters].filter(t => !t.archived).sort((a, b) => a.name.localeCompare(b.name));
+      return [...this.db.data.transporters].filter(t => !t.archived).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     }
 
     if (sql.includes('SELECT') && (sql.includes('FROM transporters WHERE id = ?') || sql.includes('FROM transporters WHERE id=?'))) {
@@ -1657,7 +1657,7 @@ class PreparedStatement {
 
     if (sql.includes('SELECT r.* FROM transport_requests r')) {
       const requests = [...this.db.data.transport_requests];
-      requests.sort((a, b) => b.created_at.localeCompare(a.created_at));
+      requests.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
       return requests.map(r => {
         const item_count = this.db.data.transport_request_items.filter(x => x.request_id === r.id).length;
         const sent_count = this.db.data.transport_distributions.filter(x => x.request_id === r.id).length;
