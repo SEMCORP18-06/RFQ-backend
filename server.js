@@ -1602,6 +1602,61 @@ app.post('/api/rfqs/distribute', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════
+//  PORTAL DISTRIBUTIONS BATCH GET ENDPOINTS
+// ═══════════════════════════════════════════════════════════
+app.get('/api/vendor-portal/distributions/:vendorId', (req, res) => {
+  try {
+    const { vendorId } = req.params;
+    const dists = db.prepare('SELECT * FROM rfq_distributions WHERE vendor_id = ?').all(vendorId);
+    
+    // For each distribution, join with RFQ details
+    const result = dists.map(d => {
+      const rfq = db.prepare('SELECT * FROM rfqs WHERE id = ?').get(d.rfq_id);
+      return {
+        ...d,
+        rfq_number: rfq ? rfq.rfq_number : 'RFQ-XXX',
+        project_name: rfq ? rfq.project_name : 'N/A',
+        rfq_date: rfq ? rfq.rfq_date : '-',
+        available_from: rfq ? rfq.available_from : '',
+        available_to: rfq ? rfq.available_to : '',
+        delivery_date: rfq ? rfq.delivery_date : '',
+        request_status: rfq ? rfq.status : 'Sent'
+      };
+    });
+    
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.get('/api/transporter-portal/distributions/:transporterId', (req, res) => {
+  try {
+    const { transporterId } = req.params;
+    const dists = db.prepare('SELECT * FROM transport_distributions WHERE transporter_id = ?').all(transporterId);
+    
+    // For each distribution, join with request details
+    const result = dists.map(d => {
+      const reqDetails = db.prepare('SELECT * FROM transport_requests WHERE id = ?').get(d.request_id);
+      return {
+        ...d,
+        request_number: reqDetails ? reqDetails.request_number : 'TR-XXX',
+        project_name: reqDetails ? reqDetails.project_name : 'N/A',
+        request_date: reqDetails ? reqDetails.request_date : '-',
+        vehicle_available_from: reqDetails ? reqDetails.vehicle_available_from : '',
+        vehicle_available_to: reqDetails ? reqDetails.vehicle_available_to : '',
+        required_date: reqDetails ? reqDetails.required_date : '',
+        request_status: reqDetails ? reqDetails.status : 'Sent'
+      };
+    });
+    
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
 //  VENDOR PORTAL — SECURE TOKEN ACCESS
 // ═══════════════════════════════════════════════════════════
 app.get('/api/vendor-portal/verify', (req, res) => {

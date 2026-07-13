@@ -337,20 +337,41 @@ class Database {
         return mergedArray;
       }
 
-      this.data.vendors = await mergeCollection(this.data.vendors || [], vendors, Vendor, ['id'], 'vendor');
-      this.data.rfqs = await mergeCollection(this.data.rfqs || [], rfqs, Rfq, ['id'], 'rfq');
-      this.data.rfq_items = await mergeCollection(this.data.rfq_items || [], items, RfqItem, ['rfq_id', 'description', 'moc', 'size'], 'rfq_item');
-      this.data.rfq_distributions = await mergeCollection(this.data.rfq_distributions || [], dists, RfqDistribution, ['rfq_id', 'vendor_id'], 'rfq_distribution');
-      this.data.vendor_quotes = await mergeCollection(this.data.vendor_quotes || [], quotes, VendorQuote, ['rfq_id', 'vendor_id', 'item_id'], 'vendor_quote');
-      this.data.audit_trail = await mergeCollection(this.data.audit_trail || [], audits, AuditLog, ['username', 'action', 'details', 'timestamp'], 'audit_log');
-      this.data.notifications = await mergeCollection(this.data.notifications || [], notifications, Notification, ['title', 'message', 'timestamp'], 'notification');
-      this.data.users = await mergeCollection(this.data.users || [], users, User, ['id'], 'user');
-      this.data.transporters = await mergeCollection(this.data.transporters || [], transporters, Transporter, ['id'], 'transporter');
-      this.data.transport_requests = await mergeCollection(this.data.transport_requests || [], transportRequests, TransportRequest, ['id'], 'transport_request');
-      this.data.transport_request_items = await mergeCollection(this.data.transport_request_items || [], transportRequestItems, TransportRequestItem, ['request_id', 'material_name'], 'transport_request_item');
-      this.data.transport_distributions = await mergeCollection(this.data.transport_distributions || [], transportDistributions, TransportDistribution, ['request_id', 'transporter_id'], 'transport_distribution');
+      const isMongoEmpty = (vendors.length === 0 && rfqs.length === 0 && transportRequests.length === 0);
 
-      console.log(`[MongoDB] Synced/Merged loaded data into cache: ${this.data.vendors.length} vendors, ${this.data.rfqs.length} RFQs, ${this.data.users.length} users, ${this.data.transporters.length} transporters.`);
+      if (!isMongoEmpty) {
+        // MongoDB is the absolute source of truth, overwrite local cache
+        this.data.vendors = vendors;
+        this.data.rfqs = rfqs;
+        this.data.rfq_items = items;
+        this.data.rfq_distributions = dists;
+        this.data.vendor_quotes = quotes;
+        this.data.audit_trail = audits;
+        this.data.notifications = notifications;
+        this.data.users = users;
+        this.data.transporters = transporters;
+        this.data.transport_requests = transportRequests;
+        this.data.transport_request_items = transportRequestItems;
+        this.data.transport_distributions = transportDistributions;
+        
+        console.log(`[MongoDB] Overwrote local cache directly with MongoDB collections (${vendors.length} vendors, ${rfqs.length} RFQs).`);
+      } else {
+        // Initialize MongoDB from local cache seed data
+        this.data.vendors = await mergeCollection(this.data.vendors || [], vendors, Vendor, ['id'], 'vendor');
+        this.data.rfqs = await mergeCollection(this.data.rfqs || [], rfqs, Rfq, ['id'], 'rfq');
+        this.data.rfq_items = await mergeCollection(this.data.rfq_items || [], items, RfqItem, ['rfq_id', 'description', 'moc', 'size'], 'rfq_item');
+        this.data.rfq_distributions = await mergeCollection(this.data.rfq_distributions || [], dists, RfqDistribution, ['rfq_id', 'vendor_id'], 'rfq_distribution');
+        this.data.vendor_quotes = await mergeCollection(this.data.vendor_quotes || [], quotes, VendorQuote, ['rfq_id', 'vendor_id', 'item_id'], 'vendor_quote');
+        this.data.audit_trail = await mergeCollection(this.data.audit_trail || [], audits, AuditLog, ['username', 'action', 'details', 'timestamp'], 'audit_log');
+        this.data.notifications = await mergeCollection(this.data.notifications || [], notifications, Notification, ['title', 'message', 'timestamp'], 'notification');
+        this.data.users = await mergeCollection(this.data.users || [], users, User, ['id'], 'user');
+        this.data.transporters = await mergeCollection(this.data.transporters || [], transporters, Transporter, ['id'], 'transporter');
+        this.data.transport_requests = await mergeCollection(this.data.transport_requests || [], transportRequests, TransportRequest, ['id'], 'transport_request');
+        this.data.transport_request_items = await mergeCollection(this.data.transport_request_items || [], transportRequestItems, TransportRequestItem, ['request_id', 'material_name'], 'transport_request_item');
+        this.data.transport_distributions = await mergeCollection(this.data.transport_distributions || [], transportDistributions, TransportDistribution, ['request_id', 'transporter_id'], 'transport_distribution');
+        console.log(`[MongoDB] Initialized MongoDB collections from local cache seed data.`);
+      }
+
       this.save(); // Sync to local JSON file as backup
     } catch (e) {
       console.error('[MongoDB] Connection or Sync Error:', e.message);
