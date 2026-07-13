@@ -78,6 +78,40 @@ const smtpTransporter = nodemailer.createTransport({
   }
 });
 
+function convertHtmlToText(html) {
+  if (!html) return '';
+  let text = html;
+  
+  // Replace line breaks and paragraph markers with newlines
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+  text = text.replace(/<\/p>/gi, '\n\n');
+  text = text.replace(/<\/tr>/gi, '\n');
+  text = text.replace(/<\/td>/gi, '   ');
+  text = text.replace(/<\/div>/gi, '\n');
+  text = text.replace(/<h[1-6][^>]*>/gi, '\n\n');
+  text = text.replace(/<\/h[1-6]>/gi, '\n');
+  
+  // Format links as "Text (URL)"
+  text = text.replace(/<a\s+(?:[^>]*?\s+)?href="([^"]*)"[^>]*>(.*?)<\/a>/gi, '$2 ($1)');
+  
+  // Remove all other HTML tags
+  text = text.replace(/<[^>]+>/g, '');
+  
+  // Decode basic HTML entities
+  text = text.replace(/&nbsp;/gi, ' ');
+  text = text.replace(/&amp;/gi, '&');
+  text = text.replace(/&lt;/gi, '<');
+  text = text.replace(/&gt;/gi, '>');
+  text = text.replace(/&quot;/gi, '"');
+  text = text.replace(/&#39;/gi, "'");
+  text = text.replace(/₹/g, 'INR ');
+  
+  // Compress multiple newlines
+  text = text.replace(/\n\s*\n\s*\n+/g, '\n\n');
+  
+  return text.trim();
+}
+
 async function sendMailViaSmtp(to, subject, html, attachmentPath = null, attachmentName = null) {
   try {
     const attachments = [];
@@ -109,12 +143,25 @@ async function sendMailViaSmtp(to, subject, html, attachmentPath = null, attachm
         });
       }
     }
+
+    const plainText = convertHtmlToText(html);
+    const fromEmail = process.env.SMTP_USER || 'umesh.p@semcogroups.com';
+
     await smtpTransporter.sendMail({
-      from: `"${process.env.SMTP_FROM_NAME || 'SEMCO Groups'}" <${process.env.SMTP_USER || 'umesh.p@semcogroups.com'}>`,
+      from: `"${process.env.SMTP_FROM_NAME || 'SEMCO Groups'}" <${fromEmail}>`,
       to: to,
       subject: subject,
       html: html,
-      attachments: attachments
+      text: plainText,
+      attachments: attachments,
+      headers: {
+        'X-Priority': '3',
+        'X-MSMail-Priority': 'Normal',
+        'Importance': 'Normal',
+        'Precedence': 'bulk',
+        'X-Auto-Response-Suppress': 'OOF, AutoReply',
+        'List-Unsubscribe': `<mailto:${fromEmail}?subject=Unsubscribe-RFQ-Partner>`
+      }
     });
     console.log(`[SMTP] Email successfully sent to ${to}`);
     return true;
@@ -166,7 +213,7 @@ async function notifyLiveRankingsForRFQ(rfqId) {
       const isL1 = rank === 1;
       const rankText = `#${rank} of ${totalBids}`;
       
-      const subject = `[Rank Update] Live Ranking Alert: RFQ ${rfq.rfq_number}`;
+      const subject = `Live Ranking Update: RFQ ${rfq.rfq_number}`;
       const emailHtml = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; background-color: #f8fafc;">
           <div style="text-align: center; margin-bottom: 20px;">
@@ -234,7 +281,7 @@ async function notifyLiveRankingsForTransportRequest(requestId) {
       const isL1 = rank === 1;
       const rankText = `#${rank} of ${totalBids}`;
       
-      const subject = `[Rank Update] Live Ranking Alert: Transport Request ${reqItem.request_number}`;
+      const subject = `Live Ranking Update: Transport Request ${reqItem.request_number}`;
       const emailHtml = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; background-color: #f8fafc;">
           <div style="text-align: center; margin-bottom: 20px;">
@@ -1747,7 +1794,7 @@ app.post('/api/vendor-portal/submit', (req, res) => {
         try {
           const rfqFull = db.prepare('SELECT rfq_number, project_name FROM rfqs WHERE id = ?').get(rfq_id);
           const currentDist = db.prepare('SELECT vendor_docs, vendor_doc_path, vendor_doc_name FROM rfq_distributions WHERE rfq_id = ? AND vendor_id = ?').get(rfq_id, vendor_id);
-          const subject = `[New Bid] Vendor ${vendor.name} has submitted a quote for RFQ ${rfqFull.rfq_number}`;
+          const subject = `RFQ Submission: Vendor ${vendor.name} - RFQ ${rfqFull.rfq_number}`;
           
           let attachmentPaths = null;
           let attachmentNames = null;
@@ -2052,7 +2099,7 @@ app.post('/api/vendors/:id/profile', async (req, res) => {
     logAudit(req.headers['x-user'] || 'Vendor', 'VENDOR_PROFILE_UPDATE', `Updated company profile details for ${existing.name} (${id})`, req);
 
     // Send notification email to admin
-    const subject = `[Notification] Partner Profile Updated — ${existing.name}`;
+    const subject = `Partner Profile Updated — ${existing.name}`;
     const emailHtml = `
       <div style="font-family:'Segoe UI',Arial,sans-serif;color:#333;max-width:600px;margin:auto;border:1px solid #e2e8f0;border-radius:8px;padding:24px;">
         <h3 style="color:#1e3a8a;border-bottom:2px solid #3b82f6;padding-bottom:8px;margin-top:0;">Partner Profile Submission Received</h3>
@@ -3098,10 +3145,8 @@ app.post('/api/rfqs/:id/finalise', async (req, res) => {
     // 1. Send Congratulations Email to L1 winner
     if (l1VendorId && l1VendorEmail) {
       try {
-        const l1Dist = distributions.find(d => d.vendor_id === l1VendorId);
-        const l1FinalCost = l1Dist ? (parseFloat(l1Dist.final_cost) || 0) : 0;
         const winnerHtml = buildL1WinnerEmail(l1VendorContact, rfq.rfq_number, rfq.project_name, l1TotalValue, l1FinalCost);
-        await sendMailViaSmtp(l1VendorEmail, `Congratulations! L1 Winner for RFQ: ${rfq.rfq_number} [Ref: ${finaliseTime}]`, winnerHtml);
+        await sendMailViaSmtp(l1VendorEmail, `RFQ Award Notification: L1 Winner for RFQ ${rfq.rfq_number} [Ref: ${finaliseTime}]`, winnerHtml);
       } catch (mailErr) {
         console.error(`[Finalise RFQ Winner Email Error] ${l1VendorEmail}:`, mailErr.message);
       }
@@ -3237,7 +3282,7 @@ app.post('/api/transport-requests/:id/finalise', async (req, res) => {
     if (l1TransporterId && l1TransporterEmail) {
       try {
         const winnerHtml = buildL1WinnerEmail(l1TransporterName, request.request_number, request.from_location, request.to_location, l1TotalCost);
-        await sendMailViaSmtp(l1TransporterEmail, `Congratulations! L1 Winner for Transport Request: ${request.request_number} [Ref: ${finaliseTime}]`, winnerHtml);
+        await sendMailViaSmtp(l1TransporterEmail, `Transport Request Award Notification: L1 Winner for ${request.request_number} [Ref: ${finaliseTime}]`, winnerHtml);
       } catch (mailErr) {
         console.error(`[Finalise Transport Winner Email Error] ${l1TransporterEmail}:`, mailErr.message);
       }
@@ -3669,7 +3714,7 @@ async function checkRemindersAndExpirations() {
         db.prepare("UPDATE transport_distributions SET reminder_60_sent = ? WHERE request_id = ? AND transporter_id = ?").run(1, d.request_id, d.transporter_id);
         
         const portalUrl = `${getFrontendUrl(null)}/index.html?transport_token=${d.token}`;
-        const subject = `⏰ REMINDER: 1 hour left to quote for Transport Request ${d.request_number}`;
+        const subject = `Reminder: 1 hour remaining for Transport Request ${d.request_number}`;
         const emailHtml = `
           <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
             <div style="background:#2563eb;padding:25px;text-align:center;border-bottom:3px solid #1d4ed8;">
@@ -3701,7 +3746,7 @@ async function checkRemindersAndExpirations() {
         db.prepare("UPDATE transport_distributions SET reminder_30_sent = ? WHERE request_id = ? AND transporter_id = ?").run(1, d.request_id, d.transporter_id);
         
         const portalUrl = `${getFrontendUrl(null)}/index.html?transport_token=${d.token}`;
-        const subject = `⚠️ URGENT REMINDER: 30 minutes left to quote for Transport Request ${d.request_number}`;
+        const subject = `Final Reminder: 30 minutes remaining for Transport Request ${d.request_number}`;
         const emailHtml = `
           <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
             <div style="background:#e11d48;padding:25px;text-align:center;border-bottom:3px solid #be123c;">
@@ -3766,7 +3811,7 @@ async function checkRemindersAndExpirations() {
         db.prepare("UPDATE rfq_distributions SET reminder_60_sent = ? WHERE rfq_id = ? AND vendor_id = ?").run(1, d.rfq_id, d.vendor_id);
         
         const portalUrl = `${getFrontendUrl(null)}/index.html?token=${d.token}`;
-        const subject = `⏰ REMINDER: 1 hour left to quote for RFQ ${d.rfq_number}`;
+        const subject = `Reminder: 1 hour remaining for RFQ ${d.rfq_number}`;
         const emailHtml = `
           <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
             <div style="background:#2563eb;padding:25px;text-align:center;border-bottom:3px solid #1d4ed8;">
@@ -3799,7 +3844,7 @@ async function checkRemindersAndExpirations() {
         db.prepare("UPDATE rfq_distributions SET reminder_30_sent = ? WHERE rfq_id = ? AND vendor_id = ?").run(1, d.rfq_id, d.vendor_id);
         
         const portalUrl = `${getFrontendUrl(null)}/index.html?token=${d.token}`;
-        const subject = `⚠️ URGENT REMINDER: 30 minutes left to quote for RFQ ${d.rfq_number}`;
+        const subject = `Final Reminder: 30 minutes remaining for RFQ ${d.rfq_number}`;
         const emailHtml = `
           <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
             <div style="background:#e11d48;padding:25px;text-align:center;border-bottom:3px solid #be123c;">
