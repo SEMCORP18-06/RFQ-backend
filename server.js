@@ -1305,15 +1305,15 @@ app.get('/api/rfqs/:id', (req, res) => {
 
 app.post('/api/rfqs', (req, res) => {
   try {
-    const { rfq_date, delivery_date, project_name, department, buyer_name, items, vendor_ids, available_from, available_to, initial_window_hours, custom_headers, allow_spec_sheet } = req.body;
+    const { rfq_date, delivery_date, project_name, department, buyer_name, items, vendor_ids, available_from, available_to, initial_window_hours, custom_headers, allow_spec_sheet, excel_filename, excel_path } = req.body;
     const count = db.prepare('SELECT count(*) AS c FROM rfqs').get().c;
     const rfq_number = `RFQ-${new Date().getFullYear()}-${String(count + 1).padStart(3, '0')}`;
     const id = 'rfq_' + Date.now();
 
     db.prepare(`
-      INSERT INTO rfqs (id,rfq_number,rfq_date,delivery_date,project_name,department,buyer_name,status,available_from,available_to,initial_window_hours,custom_headers,allow_spec_sheet)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-    `).run(id, rfq_number, rfq_date || new Date().toISOString().slice(0,10), delivery_date, project_name, department || '', buyer_name || '', 'Draft', available_from || '', available_to || '', initial_window_hours || '12', custom_headers || '', allow_spec_sheet ? 1 : 0);
+      INSERT INTO rfqs (id,rfq_number,rfq_date,delivery_date,project_name,department,buyer_name,status,available_from,available_to,initial_window_hours,custom_headers,allow_spec_sheet,excel_filename,excel_path)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(id, rfq_number, rfq_date || new Date().toISOString().slice(0,10), delivery_date, project_name, department || '', buyer_name || '', 'Draft', available_from || '', available_to || '', initial_window_hours || '12', custom_headers || '', allow_spec_sheet ? 1 : 0, excel_filename || '', excel_path || '');
 
     if (items && items.length > 0) {
       const insertItem = db.prepare(`INSERT INTO rfq_items (rfq_id,moc,description,size,quantity,unit,custom_data) VALUES (?,?,?,?,?,?,?)`);
