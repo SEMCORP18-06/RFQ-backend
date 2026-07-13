@@ -3985,7 +3985,6 @@ function buildPlatformInviteEmail(contactName, type, registerUrl) {
           <td style="padding:18px 20px;">
             <table border="0" cellpadding="0" cellspacing="0" width="100%">
               <tr>
-                <td width="36" valign="top" style="font-size:22px;line-height:1;padding-right:12px;">&#x26A0;&#xFE0F;</td>
                 <td valign="top">
                   <div style="font-weight:700;font-size:15px;color:#c2410c;margin-bottom:8px;font-family:'Segoe UI',Arial,sans-serif;">Important — Bidding Deadline Policy</div>
                   <table border="0" cellpadding="0" cellspacing="0" style="font-size:15px;color:#7c2d12;font-family:'Segoe UI',Arial,sans-serif;">
@@ -4005,7 +4004,6 @@ function buildPlatformInviteEmail(contactName, type, registerUrl) {
           <td style="padding:18px 20px;">
             <table border="0" cellpadding="0" cellspacing="0" width="100%">
               <tr>
-                <td width="36" valign="top" style="font-size:20px;padding-right:10px;">&#x1F4E8;</td>
                 <td valign="top">
                   <div style="font-weight:700;font-size:15px;color:#166534;margin-bottom:4px;font-family:'Segoe UI',Arial,sans-serif;">Upcoming Requests</div>
                   <div style="font-size:15px;color:#15803d;line-height:1.65;font-family:'Segoe UI',Arial,sans-serif;">
@@ -4024,7 +4022,7 @@ function buildPlatformInviteEmail(contactName, type, registerUrl) {
           <td style="padding:16px 18px;font-size:15px;color:#475569;font-family:'Segoe UI',Arial,sans-serif;line-height:1.7;">
             <strong style="color:#1e293b;">Need Help?</strong><br>
             If you have any questions about using the platform or your registration, please reach out to our procurement team:<br>
-            <span style="color:${accentColor};font-weight:600;">&#x1F4E7; umesh.p@semcogroups.com</span>
+            <span style="color:${accentColor};font-weight:600;">Email: umesh.p@semcogroups.com</span>
           </td>
         </tr>
       </table>
@@ -4070,8 +4068,8 @@ app.post('/api/send-platform-invite', async (req, res) => {
       const contactName = r.contact_person || r.name;
       const randId = Math.floor(1000 + Math.random() * 9000);
       const subject = isVendor
-        ? `Welcome to SEMCO Smart RFQ Platform — Vendor Registration Guide [Ref #${randId}]`
-        : `Welcome to SEMCO Smart RFQ Platform — Transporter Registration Guide [Ref #${randId}]`;
+        ? `Onboarding Invitation: SEMCO Groups Vendor Portal`
+        : `Onboarding Invitation: SEMCO Groups Transporter Portal`;
 
       const registerToken = jwt.sign({ id: r.id, type }, JWT_SECRET, { expiresIn: '30d' });
       const registerUrl = `${getFrontendUrl(req)}/index.html?register_token=${registerToken}`;
