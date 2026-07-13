@@ -638,17 +638,27 @@ function logAudit(username, action, details, req) {
 }
 
 function nextVendorId() {
-  const last = db.prepare("SELECT id FROM vendors ORDER BY id DESC LIMIT 1").get();
-  if (!last) return 'VND001';
-  const num = parseInt(last.id.replace('VND', ''), 10) + 1;
-  return 'VND' + String(num).padStart(3, '0');
+  const vendors = db.prepare("SELECT id FROM vendors").all();
+  let maxNum = 0;
+  vendors.forEach(v => {
+    if (v.id && /^VND\d+$/.test(v.id)) {
+      const num = parseInt(v.id.replace('VND', ''), 10);
+      if (num > maxNum) maxNum = num;
+    }
+  });
+  return 'VND' + String(maxNum + 1).padStart(3, '0');
 }
 
 function nextTransporterId() {
-  const last = db.prepare("SELECT id FROM transporters ORDER BY id DESC LIMIT 1").get();
-  if (!last) return 'TRN001';
-  const num = parseInt(last.id.replace('TRN', ''), 10) + 1;
-  return 'TRN' + String(num).padStart(3, '0');
+  const transporters = db.prepare("SELECT id FROM transporters").all();
+  let maxNum = 0;
+  transporters.forEach(t => {
+    if (t.id && /^TRN\d+$/.test(t.id)) {
+      const num = parseInt(t.id.replace('TRN', ''), 10);
+      if (num > maxNum) maxNum = num;
+    }
+  });
+  return 'TRN' + String(maxNum + 1).padStart(3, '0');
 }
 
 function cleanUpFile(filepath) {
