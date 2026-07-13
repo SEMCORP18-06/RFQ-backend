@@ -1632,6 +1632,18 @@ app.get('/api/vendor-portal/verify', (req, res) => {
 
     // Track "opened" status
     const dist = db.prepare('SELECT * FROM rfq_distributions WHERE rfq_id = ? AND vendor_id = ?').get(rfq_id, vendor_id);
+
+    // If RFQ is manually closed or expired, and they have not submitted, block access
+    const isExpired = rfq.available_to && new Date() > new Date(rfq.available_to);
+    if (dist && dist.status !== 'Submitted' && (rfq.status === 'Closed' || rfq.status === 'Expired' || isExpired)) {
+      return res.status(403).json({
+        success: false,
+        message: rfq.status === 'Closed'
+          ? 'This RFQ has been closed manually by the administrator.'
+          : 'This RFQ bidding window has expired. Quotes are no longer accepted.'
+      });
+    }
+
     if (dist && dist.status === 'Sent') {
       db.prepare(`UPDATE rfq_distributions SET status = 'Opened', opened_at = datetime('now') WHERE rfq_id = ? AND vendor_id = ?`)
         .run(rfq_id, vendor_id);
