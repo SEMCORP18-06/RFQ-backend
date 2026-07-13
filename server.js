@@ -114,6 +114,60 @@ function convertHtmlToText(html) {
 
 async function sendMailViaSmtp(to, subject, html, attachmentPath = null, attachmentName = null) {
   try {
+    const plainText = convertHtmlToText(html);
+
+    if (sendgridReady) {
+      const sendgridAttachments = [];
+      if (attachmentPath) {
+        if (Array.isArray(attachmentPath)) {
+          attachmentPath.forEach((p, idx) => {
+            if (p && fs.existsSync(p)) {
+              const name = (Array.isArray(attachmentName) && attachmentName[idx]) || (typeof attachmentName === 'string' ? attachmentName : path.basename(p));
+              const content = fs.readFileSync(p).toString('base64');
+              sendgridAttachments.push({
+                content: content,
+                filename: name,
+                type: 'application/octet-stream',
+                disposition: 'attachment'
+              });
+            }
+          });
+        } else if (fs.existsSync(attachmentPath)) {
+          const name = attachmentName || 'RFQ_Attachment.xlsx';
+          const content = fs.readFileSync(attachmentPath).toString('base64');
+          sendgridAttachments.push({
+            content: content,
+            filename: name,
+            type: 'application/octet-stream',
+            disposition: 'attachment'
+          });
+        }
+      }
+
+      const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'rfq@semcogroups.com';
+      const fromName = process.env.SENDGRID_FROM_NAME || 'SEMCO Groups';
+
+      await sgMail.send({
+        to: to,
+        from: {
+          email: fromEmail,
+          name: fromName
+        },
+        subject: subject,
+        html: html,
+        text: plainText,
+        attachments: sendgridAttachments,
+        headers: {
+          'X-Priority': '3',
+          'X-MSMail-Priority': 'Normal',
+          'Importance': 'Normal',
+          'X-Auto-Response-Suppress': 'OOF, AutoReply'
+        }
+      });
+      console.log(`[SendGrid] Email successfully sent to ${to}`);
+      return true;
+    }
+
     const attachments = [];
     if (attachmentPath) {
       if (Array.isArray(attachmentPath)) {
@@ -134,7 +188,6 @@ async function sendMailViaSmtp(to, subject, html, attachmentPath = null, attachm
       }
     }
 
-    const plainText = convertHtmlToText(html);
     const fromEmail = process.env.SMTP_USER || 'umesh.p@semcogroups.com';
 
     await smtpTransporter.sendMail({
@@ -155,7 +208,7 @@ async function sendMailViaSmtp(to, subject, html, attachmentPath = null, attachm
     console.log(`[SMTP] Email successfully sent to ${to}`);
     return true;
   } catch (error) {
-    console.error(`[SMTP Error] Failed to send email to ${to}:`, error.message);
+    console.error(`[Email Error] Failed to send email to ${to}:`, error.message);
     return false;
   }
 }
