@@ -925,6 +925,11 @@ class PreparedStatement {
       return this.db.data.rfq_distributions.find(x => x.rfq_id === rfqId && x.vendor_id === vendorId);
     }
 
+    if (sql.includes('FROM rfq_distributions WHERE vendor_id = ?') || sql.includes('FROM rfq_distributions WHERE vendor_id=?')) {
+      const vendorId = args[0];
+      return this.db.data.rfq_distributions.filter(x => x.vendor_id === vendorId);
+    }
+
     if (sql.includes('FROM rfq_distributions WHERE rfq_id = ?') || sql.includes('FROM rfq_distributions WHERE rfq_id=?')) {
       const rfqId = args[0];
       return this.db.data.rfq_distributions.filter(x => x.rfq_id === rfqId);
@@ -1995,7 +2000,12 @@ class PreparedStatement {
       return [...this.db.data.transport_distributions];
     }
 
-    if (sql.includes('FROM transport_distributions WHERE request_id = ?')) {
+    if (sql.includes('FROM transport_distributions WHERE transporter_id = ?') || sql.includes('FROM transport_distributions WHERE transporter_id=?')) {
+      const transporterId = args[0];
+      return this.db.data.transport_distributions.filter(x => x.transporter_id === transporterId);
+    }
+
+    if (sql.includes('FROM transport_distributions WHERE request_id = ?') || sql.includes('FROM transport_distributions WHERE request_id=?')) {
       const requestId = args[0];
       return this.db.data.transport_distributions.filter(x => x.request_id === requestId);
     }
