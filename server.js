@@ -284,17 +284,22 @@ app.use(express.static(path.join(__dirname)));
 
 // Middleware to ensure database is connected before processing request on Vercel
 let mongoConnected = false;
+let mongoConnectingPromise = null;
 app.use(async (req, res, next) => {
   if (process.env.MONGODB_URI && !mongoConnected) {
-    try {
-      await db.connectMongo(process.env.MONGODB_URI);
-      mongoConnected = true;
-    } catch (err) {
-      console.error('[MongoDB Middleware Error]:', err.message);
+    if (!mongoConnectingPromise) {
+      mongoConnectingPromise = db.connectMongo(process.env.MONGODB_URI)
+        .then(() => { mongoConnected = true; })
+        .catch(err => { console.error('[MongoDB Middleware Error]:', err.message); })
+        .finally(() => { mongoConnectingPromise = null; });
     }
+    try {
+      await mongoConnectingPromise;
+    } catch (_) {}
   }
   next();
 });
+
 
 // ═══════════════════════════════════════════════════════════
 //  DATABASE SCHEMA
