@@ -64,19 +64,35 @@ if (process.env.SENDGRID_API_KEY && process.env.SENDGRID_API_KEY.startsWith('SG.
 }
 
 // ─── SMTP Transporter ────────────────────────────────────
+// Only treat SMTP as configured when credentials are explicitly set via env vars.
+// Hardcoded fallback values are intentionally excluded to prevent hanging
+// serverless function invocations on Vercel where outbound SMTP port 587 is blocked.
+const SMTP_CONFIGURED = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+
 const smtpTransporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.office365.com',
   port: parseInt(process.env.SMTP_PORT || '587', 10),
-  secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
+  secure: process.env.SMTP_SECURE === 'true',
   auth: {
     user: process.env.SMTP_USER || 'umesh.p@semcogroups.com',
     pass: process.env.SMTP_PASS || 'U@$emco@111'
   },
+  // Short timeouts prevent serverless function hangs when SMTP port is blocked
+  connectionTimeout: 5000,
+  socketTimeout: 5000,
+  greetingTimeout: 5000,
   tls: {
     ciphers: 'SSLv3',
     rejectUnauthorized: false
   }
 });
+
+// Helper: returns true if at least one email channel is properly configured
+function sendMailEnabled() {
+  if (sendgridReady) return true;
+  if (SMTP_CONFIGURED) return true;
+  return false;
+}
 
 function convertHtmlToText(html) {
   if (!html) return '';
@@ -168,6 +184,13 @@ async function sendMailViaSmtp(to, subject, html, attachmentPath = null, attachm
       return true;
     }
 
+    // SMTP fallback — only attempt if credentials are explicitly configured
+    if (!SMTP_CONFIGURED) {
+      console.warn(`[Email Skip] Neither SendGrid nor SMTP credentials are configured. Email to ${to} was NOT sent.`);
+      console.warn('[Email Fix] Set SENDGRID_API_KEY (preferred) or SMTP_HOST + SMTP_USER + SMTP_PASS environment variables.');
+      return false;
+    }
+
     const attachments = [];
     if (attachmentPath) {
       if (Array.isArray(attachmentPath)) {
@@ -229,6 +252,12 @@ function formatDateDDMMYYYY(dateStr) {
 
 async function notifyLiveRankingsForRFQ(rfqId) {
   try {
+    // Fast-fail if no email channel is configured (avoids hangs on Vercel)
+    if (!sendMailEnabled()) {
+      console.warn(`[Ranking Email] Skipped for RFQ ${rfqId}: no email channel configured (set SENDGRID_API_KEY or SMTP_HOST/USER/PASS).`);
+      return;
+    }
+
     const rfq = db.prepare('SELECT rfq_number, project_name FROM rfqs WHERE id = ?').get(rfqId);
     if (!rfq) return;
 
@@ -297,6 +326,12 @@ async function notifyLiveRankingsForRFQ(rfqId) {
 
 async function notifyLiveRankingsForTransportRequest(requestId) {
   try {
+    // Fast-fail if no email channel is configured (avoids hangs on Vercel)
+    if (!sendMailEnabled()) {
+      console.warn(`[Ranking Email] Skipped for Transport Request ${requestId}: no email channel configured (set SENDGRID_API_KEY or SMTP_HOST/USER/PASS).`);
+      return;
+    }
+
     const reqItem = db.prepare('SELECT request_number, from_location, to_location FROM transport_requests WHERE id = ?').get(requestId);
     if (!reqItem) return;
 
