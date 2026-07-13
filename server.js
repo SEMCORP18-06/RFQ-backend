@@ -2694,13 +2694,18 @@ app.get('/api/transporter-portal/verify', (req, res) => {
       return res.status(403).json({ success: false, message: 'This transport request is scheduled and will be active only after its start time.' });
     }
 
-    // Check expiration — allow submitted distributions through so they can view their bid
-    if (dist.status !== 'Submitted' && (dist.request_status === 'Expired' || new Date() > new Date(dist.expires_at))) {
-      if (dist.status !== 'Expired') {
+    // Check expiration or manual closure — allow submitted distributions through so they can view their bid
+    if (dist.status !== 'Submitted' && (dist.request_status === 'Expired' || dist.request_status === 'Closed' || new Date() > new Date(dist.expires_at))) {
+      if (dist.status !== 'Expired' && dist.request_status !== 'Closed') {
         db.prepare("UPDATE transport_distributions SET status = 'Expired' WHERE token = ?").run(token);
         db.prepare("UPDATE transport_requests SET status = 'Expired' WHERE id = ? AND status != 'Submitted' AND status != 'Closed'").run(dist.request_id);
       }
-      return res.status(403).json({ success: false, message: 'This bid request window has expired. Quotes are no longer accepted.' });
+      return res.status(403).json({ 
+        success: false, 
+        message: dist.request_status === 'Closed' 
+          ? 'This transport request has been closed manually by the administrator.' 
+          : 'This bid request window has expired. Quotes are no longer accepted.' 
+      });
     }
 
     // If status is 'Sent', update to 'Opened'
@@ -2783,12 +2788,17 @@ app.post('/api/transporter-portal/submit', (req, res) => {
       return res.status(403).json({ success: false, message: 'This transport request is scheduled and will be active only after its start time.' });
     }
 
-    // Check if expired
-    if (dist.request_status === 'Expired' || new Date() > new Date(dist.expires_at)) {
-      if (dist.status !== 'Submitted' && dist.status !== 'Expired') {
+    // Check if expired or manually closed
+    if (dist.request_status === 'Expired' || dist.request_status === 'Closed' || new Date() > new Date(dist.expires_at)) {
+      if (dist.status !== 'Submitted' && dist.status !== 'Expired' && dist.request_status !== 'Closed') {
         db.prepare("UPDATE transport_distributions SET status = 'Expired' WHERE token = ?").run(token);
       }
-      return res.status(403).json({ success: false, message: 'The 1-hour submission window has expired.' });
+      return res.status(403).json({ 
+        success: false, 
+        message: dist.request_status === 'Closed' 
+          ? 'This transport request has been closed manually by the administrator.' 
+          : 'The bidding submission window has expired.' 
+      });
     }
 
     const weight = parseFloat(actual_weight_charged) || 1; // always 1 for flat-rate trips
