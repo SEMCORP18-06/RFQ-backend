@@ -3929,112 +3929,48 @@ function buildPlatformInviteEmail(contactName, type, registerUrl) {
   const isVendor    = type === 'vendor';
   const portalType  = isVendor ? 'Vendor' : 'Transporter';
   const accentColor = isVendor ? '#2563eb' : '#0891b2';
-  const headerGrad  = isVendor
-    ? 'linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%)'
-    : 'linear-gradient(135deg,#0f172a 0%,#164e63 100%)';
   const year        = new Date().getFullYear();
-  const logoSrc     = 'https://semcogroupsrfq.vercel.app/semco-logo-new.png';
-
-  const logoHtml = `<img src="${logoSrc}" alt="SEMCO Groups" width="210" style="display:block;margin:0 auto 16px;max-width:210px;height:auto;" />`;
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>Welcome to SEMCO Smart RFQ Platform</title>
+  <title>SEMCO Onboarding Invitation</title>
 </head>
-<body style="margin:0;padding:20px;background:#f1f5f9;font-family:'Segoe UI',Arial,sans-serif;">
-  <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);border:1px solid #e2e8f0;">
+<body style="margin:0;padding:24px;background-color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1e293b;line-height:1.6;">
+  <p style="font-size:16px;margin-top:0;">Dear ${contactName},</p>
+  
+  <p style="font-size:15px;">
+    We are pleased to invite you to join the <strong>SEMCO Groups Smart RFQ Platform</strong> as a registered <strong>${portalType} Partner</strong>.
+  </p>
+  
+  <p style="font-size:15px;">
+    Please complete your partner registration profile using the secure link below to receive requests for quotations (RFQs) or transport bid requests:
+  </p>
+  
+  <p style="margin:24px 0;">
+    <a href="${registerUrl}" target="_blank" style="display:inline-block;background-color:${accentColor};color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:6px;box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+      Complete Registration Profile
+    </a>
+  </p>
+  
+  <p style="font-size:14px;color:#64748b;margin-bottom:24px;">
+    If the button above does not work, copy and paste the following URL into your browser:<br>
+    <a href="${registerUrl}" target="_blank" style="color:${accentColor};text-decoration:underline;word-break:break-all;">${registerUrl}</a>
+  </p>
 
-    <!-- HEADER -->
-    <div style="background:${headerGrad};padding:32px 32px 24px;text-align:center;">
-      ${logoHtml}
-      <div style="display:inline-block;background:#f59e0b;color:#fff;font-size:12px;font-weight:700;padding:4px 16px;border-radius:20px;letter-spacing:1px;text-transform:uppercase;margin-bottom:14px;">Smart RFQ e-Procurement Platform</div>
-      <h2 style="color:#ffffff;margin:8px 0 4px;font-size:18px;font-weight:600;font-family:'Segoe UI',Arial,sans-serif;">Welcome, ${contactName}!</h2>
-      <p style="color:rgba(255,255,255,0.6);margin:0;font-size:14px;font-family:'Segoe UI',Arial,sans-serif;">You have been registered as a ${portalType} Partner on our platform.</p>
-    </div>
-
-    <!-- BODY -->
-    <div style="padding:32px;">
-
-      <!-- Greeting -->
-      <p style="font-size:16px;color:#1e293b;line-height:1.75;margin-top:0;font-family:'Segoe UI',Arial,sans-serif;">
-        Dear <strong>${contactName}</strong>,<br><br>
-        We are pleased to inform you that <strong>SEMCO Groups</strong> has onboarded you as a valued <strong>${portalType} Partner</strong> on our <strong>Smart RFQ e-Procurement Platform</strong> — a dedicated digital portal designed to streamline the ${isVendor ? 'procurement quoting' : 'logistics and freight bidding'} process.
-      </p>
-
-      <!-- REGISTRATION SECTION -->
-      <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom:24px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;">
-        <tr>
-          <td style="padding:20px 24px;text-align:center;">
-            <div style="font-weight:700;font-size:15px;color:#1e3a8a;margin-bottom:8px;font-family:'Segoe UI',Arial,sans-serif;">Complete Your Onboarding Profile</div>
-            <p style="font-size:14px;color:#1e40af;margin:0 0 16px;line-height:1.5;font-family:'Segoe UI',Arial,sans-serif;">
-              Please complete your registration profile information including contact, company address, and bank/tax details.
-            </p>
-            <a href="${registerUrl}" target="_blank" style="display:inline-block;background-color:${accentColor};color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;padding:12px 24px;border-radius:6px;font-family:'Segoe UI',Arial,sans-serif;box-shadow:0 2px 4px rgba(0,0,0,0.1);">
-              Fill Registration Information
-            </a>
-          </td>
-        </tr>
-      </table>
-
-      <!-- BIDDING DEADLINE POLICY -->
-      <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin:24px 0;background:#fff7ed;border:2px solid #f97316;border-radius:10px;">
-        <tr>
-          <td style="padding:18px 20px;">
-            <table border="0" cellpadding="0" cellspacing="0" width="100%">
-              <tr>
-                <td valign="top">
-                  <div style="font-weight:700;font-size:15px;color:#c2410c;margin-bottom:8px;font-family:'Segoe UI',Arial,sans-serif;">Important — Bidding Deadline Policy</div>
-                  <table border="0" cellpadding="0" cellspacing="0" style="font-size:15px;color:#7c2d12;font-family:'Segoe UI',Arial,sans-serif;">
-                    <tr><td valign="top" style="padding:3px 10px 3px 0;font-size:16px;">&#x2022;</td><td style="padding:3px 0;">All bids must be submitted within the specified time frame. No bids will be accepted after the deadline.</td></tr>
-                    <tr><td valign="top" style="padding:3px 10px 3px 0;font-size:16px;">&#x2022;</td><td style="padding:3px 0;">Automated email reminders are sent at 1 hour and 30 minutes before expiration.</td></tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-      </table>
-
-      <!-- Upcoming Notice -->
-      <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom:24px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;">
-        <tr>
-          <td style="padding:18px 20px;">
-            <table border="0" cellpadding="0" cellspacing="0" width="100%">
-              <tr>
-                <td valign="top">
-                  <div style="font-weight:700;font-size:15px;color:#166534;margin-bottom:4px;font-family:'Segoe UI',Arial,sans-serif;">Upcoming Requests</div>
-                  <div style="font-size:15px;color:#15803d;line-height:1.65;font-family:'Segoe UI',Arial,sans-serif;">
-                    You will be receiving ${isVendor ? 'RFQ (Request for Quotation)' : 'transport bid'} requests from us <strong>very soon</strong>. Check your inbox regularly so you do not miss any opportunities.
-                  </div>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-      </table>
-
-      <!-- Support -->
-      <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
-        <tr>
-          <td style="padding:16px 18px;font-size:15px;color:#475569;font-family:'Segoe UI',Arial,sans-serif;line-height:1.7;">
-            <strong style="color:#1e293b;">Need Help?</strong><br>
-            If you have any questions about using the platform or your registration, please reach out to our procurement team:<br>
-            <span style="color:${accentColor};font-weight:600;">Email: umesh.p@semcogroups.com</span>
-          </td>
-        </tr>
-      </table>
-
-    </div>
-
-    <!-- FOOTER -->
-    <div style="background:#0f172a;padding:18px 24px;text-align:center;">
-      <p style="color:#ffffff;font-size:12px;margin:0 0 4px;font-family:'Segoe UI',Arial,sans-serif;">&#xA9; ${year} SEMCO Groups. All rights reserved.</p>
-      <p style="color:#ffffff;font-size:12px;margin:0;font-family:'Segoe UI',Arial,sans-serif;">This is an automated email from the SEMCO Smart RFQ e-Procurement Platform. Please do not reply to this email.</p>
-    </div>
-  </div>
+  <p style="font-size:14px;color:#475569;margin-top:20px;padding-top:12px;border-top:1px solid #e2e8f0;">
+    <strong>Important Policies:</strong><br>
+    • All bids must be submitted within the specified time frame on the portal. Bids cannot be accepted after deadlines expire.<br>
+    • The portal will send automated follow-up reminders at 1 hour and 30 minutes prior to a deadline.
+  </p>
+  
+  <p style="font-size:15px;margin-top:24px;border-top:1px solid #e2e8f0;padding-top:16px;">
+    Best Regards,<br>
+    <strong>SEMCO Groups Procurement Team</strong><br>
+    <span style="font-size:13px;color:#64748b;">Email: umesh.p@semcogroups.com</span>
+  </p>
 </body>
 </html>`;
 }
