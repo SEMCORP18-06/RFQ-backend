@@ -4289,7 +4289,7 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log('');
     console.log('  ╔══════════════════════════════════════════════════════╗');
-    console.log('  ║  🚀 SEMCO Smart RFQ AI Agent — Server Running      ║');
+    console.log('  ║  🚀 SEMCO Smart RFQ Platform — Server Running      ║');
     console.log(`  ║  🌐 http://localhost:${PORT}                           ║`);
     console.log(`  ║  📦 Database: ${path.join(DB_DIR, 'semco-rfq.db').slice(-38).padStart(38)}  ║`);
     console.log(`  ║  📧 SendGrid: ${(sendgridReady ? 'Configured ✓' : 'Simulation Mode').padEnd(38)}  ║`);
