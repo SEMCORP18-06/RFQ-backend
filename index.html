@@ -6,18 +6,25 @@
             const savedTheme = localStorage.getItem('theme') || 'light';
             document.documentElement.setAttribute('data-theme', savedTheme);
 
-            // Always hide the auth overlay on first paint — the JS session
-            // check will show it only if there is no valid session.
-            // This eliminates the flash of the sign-in form on every page load.
-            const style = document.createElement('style');
-            style.id = 'temp-hide-auth';
-            style.innerHTML = '#auth-overlay { display: none !important; }';
-            document.head.appendChild(style);
+            // Hide portal loader immediately if a token or active session is detected
+            // (auth-overlay is already hidden by default in CSS; only shown explicitly when needed)
+            const urlParams = new URLSearchParams(window.location.search);
+            const hasToken = urlParams.has('token') || urlParams.has('transport_token') || urlParams.has('onboard_token');
+            const hasSession = localStorage.getItem('semco_session_token') && localStorage.getItem('semco_session_user');
+
+            if (!hasToken && !hasSession) {
+                // No token and no session: hide the loading spinner, auth will be shown by JS
+                const style = document.createElement('style');
+                style.id = 'temp-hide-loader';
+                style.innerHTML = '#portal-loader { display: none !important; }';
+                document.head.appendChild(style);
+            }
+            // If there IS a token or session, keep the portal-loader visible until startup completes
         })();
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=1.0">
-    <title>SEMCO Smart RFQ AI Agent - Enterprise Procurement Platform</title>
+    <title>SEMCO Smart RFQ - Enterprise Procurement Platform</title>
     
     <!-- External CSS & Libraries via CDN -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -670,6 +677,7 @@
             border: 2px solid var(--accent-green);
             background: linear-gradient(135deg, rgba(16, 185, 129, 0.02), rgba(16, 185, 129, 0.08));
         }
+
 
         /* Notification Dropdown layout */
         .notification-dropdown {
@@ -1576,7 +1584,6 @@
             <li class="sidebar-nav-item" data-target="panel-transporters">
                 <a href="#"><i class="fa-solid fa-truck"></i> Transporter Master</a>
             </li>
-
             <li class="sidebar-nav-item" data-target="panel-audit">
                 <a href="#"><i class="fa-solid fa-shield-halved"></i> Audit Trail</a>
             </li>
@@ -1807,6 +1814,12 @@
                 <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
                     <div>
                         <h6 class="m-0 fw-semibold text-secondary">Analytics Scope</h6>
+                        <div class="d-flex align-items-center gap-2 mt-1">
+                            <span class="text-muted" style="font-size:0.72rem;"><i class="fa-regular fa-clock me-1"></i>Updated: <span id="dashboard-last-updated">—</span></span>
+                            <button class="btn btn-xs btn-outline-secondary" style="font-size:0.72rem; padding:2px 8px; border-radius:5px;" onclick="refreshDashboardCharts()" title="Refresh Dashboard">
+                                <i class="fa-solid fa-rotate-right me-1"></i>Refresh
+                            </button>
+                        </div>
                     </div>
                     <div class="btn-group" role="group" id="dashboard-scope-group">
                         <input type="radio" class="btn-check" name="dash-scope" id="dash-scope-combined" autocomplete="off" checked onclick="changeDashboardScope('combined')">
@@ -2004,6 +2017,7 @@
                                         <div class="input-group">
                                             <input type="file" class="form-control" id="rfq-excel-file" accept=".xlsx, .xls, .csv" onchange="simulateRFQExcelImport(event)">
                                         </div>
+                                        <div id="rfq-excel-attached-indicator" class="mt-1 d-none text-success fw-semibold" style="font-size:0.75rem;"><i class="fa-solid fa-circle-check me-1"></i>Attached: <span id="rfq-excel-attached-name"></span></div>
                                         <div class="form-text fs-8 text-primary cursor-pointer" onclick="downloadRFQTemplate()"><i class="fa-solid fa-download me-1"></i> Download items template Excel</div>
                                         <div class="form-check mt-2">
                                             <input class="form-check-input" type="checkbox" id="rfq-allow-spec-sheet">
@@ -4068,9 +4082,11 @@
     <!-- CORE LOGIC: PERSISTENCE, API CONTEXT, ROUTING & CHART CREATION -->
     <script>
         // API Base URL
-        const API_URL = (window.location.protocol.startsWith('file') || !window.location.host)
-            ? 'http://localhost:5000/api'
-            : `${window.location.protocol}//${window.location.host}/api`;
+        const API_URL = (window.location.host && window.location.host.includes('rfq-backend.vercel.app'))
+            ? `${window.location.protocol}//${window.location.host}/api`
+            : (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+                ? (window.location.port === '5000' ? '/api' : 'http://localhost:5000/api')
+                : 'https://rfq-backend.vercel.app/api';
         let serverMode = false;
         let currentUser = "Vijay Mehta";
         let currentRole = "Procurement Admin";
@@ -4078,6 +4094,8 @@
         let currentToken = null;
         let currentVendorId = null;
         let currentTransporterId = null;
+        let currentEditingRfqExcelFilename = "";
+        let currentEditingRfqExcelPath = "";
         let vendorPortalTimerInterval = null;
 
         // Custom Alert popup system
@@ -4591,20 +4609,55 @@
 
         // Core App Initialization Check
         async function checkServerConnection() {
-            try {
-                const response = await fetch(`${API_URL}/vendors`, { method: 'GET', signal: AbortSignal.timeout(10000) });
-                if (response.ok) {
-                    serverMode = true;
-                    document.getElementById('server-mode-indicator').className = "badge-live-server";
-                    document.getElementById('server-status-text').textContent = "Live Express Server";
-                    console.log("[Connection] Active server found. Using Express + MongoDB Backend API.");
+            const isDeployed = window.location.hostname && 
+                               window.location.hostname !== 'localhost' && 
+                               window.location.hostname !== '127.0.0.1';
+            
+            let attempts = 3;
+            let success = false;
+            
+            while (attempts > 0 && !success) {
+                try {
+                    const response = await fetch(`${API_URL}/vendors`, { 
+                        method: 'GET', 
+                        signal: AbortSignal.timeout(10000) 
+                    });
+                    if (response.ok) {
+                        success = true;
+                    } else {
+                        attempts--;
+                        if (attempts > 0) {
+                            await new Promise(resolve => setTimeout(resolve, 1500));
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[Connection] Attempt to connect to server failed. Retries left: ${attempts - 1}`, e);
+                    attempts--;
+                    if (attempts > 0) {
+                        await new Promise(resolve => setTimeout(resolve, 1500)); // wait 1.5s before retry
+                    }
                 }
-            } catch (e) {
-                serverMode = false;
-                document.getElementById('server-mode-indicator').className = "badge-sim-server";
-                document.getElementById('server-status-text').textContent = "Simulated Local Mode";
-                console.log("[Connection] Live server offline. Defaulting to Simulated LocalStorage.");
-                initLocalStorage();
+            }
+
+            if (success) {
+                serverMode = true;
+                document.getElementById('server-mode-indicator').className = "badge-live-server";
+                document.getElementById('server-status-text').textContent = "Live Express Server";
+                console.log("[Connection] Active server found. Using Express + MongoDB Backend API.");
+            } else {
+                if (isDeployed) {
+                    // Force serverMode = true on production even if server connection failed temporarily
+                    serverMode = true;
+                    document.getElementById('server-mode-indicator').className = "badge-live-server bg-danger";
+                    document.getElementById('server-status-text').textContent = "Live Server (Connection Error)";
+                    console.error("[Connection] Live server could not be reached. Forcing server mode for production.");
+                } else {
+                    serverMode = false;
+                    document.getElementById('server-mode-indicator').className = "badge-sim-server";
+                    document.getElementById('server-status-text').textContent = "Simulated Local Mode";
+                    console.log("[Connection] Live server offline. Defaulting to Simulated LocalStorage.");
+                    initLocalStorage();
+                }
             }
         }
 
@@ -4668,7 +4721,7 @@
             if (serverMode) {
                 const res = await fetch(`${API_URL}/rfqs`);
                 const json = await res.json();
-                return json.data;
+                return Array.isArray(json.data) ? json.data : [];
             } else {
                 const rfqs = JSON.parse(localStorage.getItem('semco_rfqs'));
                 const items = JSON.parse(localStorage.getItem('semco_items'));
@@ -4789,13 +4842,7 @@
                 document.getElementById('header-clock').textContent = date.toISOString().slice(0, 19).replace('T', ' ');
             }, 1000);
 
-            // Periodically refresh dashboard metrics (every 3 seconds)
-            setInterval(() => {
-                const activePanel = document.querySelector('.tab-panel.active');
-                if (activePanel && activePanel.id === 'panel-dashboard') {
-                    refreshDashboardCharts();
-                }
-            }, 3000);
+            // Dashboard charts are refreshed on tab switch, scope change, or manual refresh — not on a timer.
 
             // Listen to localStorage changes in other tabs to update dashboard instantly in offline mode
             window.addEventListener('storage', (e) => {
@@ -4949,13 +4996,19 @@
                         currentRole = "Transporter";
                         currentTransporterId = null;
 
-                        // Hide auth overlay and run startup
-                        document.getElementById('auth-overlay').style.display = 'none';
-                        await appStartup();
+                        // Hide auth overlay and run startup (own try/catch so errors never show auth overlay)
+                        try {
+                            document.getElementById('auth-overlay').style.display = 'none';
+                            await appStartup();
 
-                        applyUserRole("Transporter");
+                            await applyUserRole("Transporter");
 
-                        await switchTab('panel-transporter-portal', transportToken);
+                            await switchTab('panel-transporter-portal', transportToken);
+                        } catch (transportLinkErr) {
+                            console.error('[Transport Link] Error loading transporter portal from token link:', transportLinkErr);
+                            // Keep auth overlay hidden — never redirect transporter to sign-in page
+                            document.getElementById('auth-overlay').style.display = 'none';
+                        }
                     } else if (urlToken) {
                         // Set external vendor context for passwordless token-based access
                         currentUser = "External Vendor";
@@ -4963,14 +5016,22 @@
                         currentVendorId = null; // Decoded from token inside simulateVendorPortalTokenAccess
 
                         // Hide auth overlay and run startup
-                        document.getElementById('auth-overlay').style.display = 'none';
-                        await appStartup();
+                        // Wrapped in its own try/catch so any error shows the vendor portal error
+                        // page instead of triggering handleSignOut() via the outer catch block.
+                        try {
+                            document.getElementById('auth-overlay').style.display = 'none';
+                            await appStartup();
 
-                        // Apply role-based visibility to side menu (Vendors only see Sourcing Portal)
-                        applyUserRole("Vendor");
+                            // Apply role-based visibility to side menu (Vendors only see Sourcing Portal)
+                            await applyUserRole("Vendor");
 
-                        // Direct to vendor portal and load token
-                        await switchTab('panel-vendor-portal', urlToken);
+                            // Direct to vendor portal and load token
+                            await switchTab('panel-vendor-portal', urlToken);
+                        } catch (vendorLinkErr) {
+                            console.error('[Vendor Link] Error loading vendor portal from token link:', vendorLinkErr);
+                            // Keep auth overlay hidden — never redirect vendor to sign-in page
+                            document.getElementById('auth-overlay').style.display = 'none';
+                        }
                     } else if (registerParam) {
                         // Force session logout to prevent conflicts
                         localStorage.removeItem('semco_session_token');
@@ -5107,10 +5168,6 @@
                     // Hide the global portal loader
                     const loaderEl = document.getElementById('portal-loader');
                     if (loaderEl) loaderEl.style.display = 'none';
-
-                    // Remove the temporary style that prevents auth-overlay flash
-                    const styleEl = document.getElementById('temp-hide-auth');
-                    if (styleEl) styleEl.remove();
                 }
             })();
         });
@@ -5180,7 +5237,7 @@
             if (targetId === 'panel-dashboard') refreshDashboardCharts();
             else if (targetId === 'panel-vendors') refreshVendorsTable();
             else if (targetId === 'panel-rfq-create') resetRFQForm();
-            else if (targetId === 'panel-rfq-tracking') refreshRFQTrackingGrid();
+            else if (targetId === 'panel-rfq-tracking') await refreshRFQTrackingGrid();
             else if (targetId === 'panel-comparative') refreshComparativeSelectors();
             else if (targetId === 'panel-vendor-portal') {
                 if (token) {
@@ -5332,12 +5389,18 @@
                 if (!isActive) return;
             }
 
-            await renderSidebar();
+            // Skip expensive renderSidebar() loop when opening a direct token link —
+            // currentVendorId/currentTransporterId is null at this point and will be
+            // resolved later inside simulateVendorPortalTokenAccess / loadTransporterPortalToken.
+            // applyUserRole() called after switchTab() will re-render the sidebar correctly.
+            const urlParamsStartup = new URLSearchParams(window.location.search);
+            const isDirectTokenLink = urlParamsStartup.has('token') || urlParamsStartup.has('transport_token');
+            if (!isDirectTokenLink) {
+                await renderSidebar();
+            }
             
             // Only switch to default dashboards if we are not loading a direct token portal link
-            const urlParams = new URLSearchParams(window.location.search);
-            const hasToken = urlParams.has('token') || urlParams.has('transport_token');
-            if (!hasToken) {
+            if (!isDirectTokenLink) {
                 if (currentRole === 'Vendor') {
                     await switchTab('panel-vendor-dashboard');
                 } else if (currentRole === 'Transporter') {
@@ -5680,7 +5743,9 @@
                                     if (d.vendor_id === currentVendorId) {
                                         distributions.push({
                                             ...d,
-                                            rfq_number: r.rfq_number
+                                            rfq_number: r.rfq_number,
+                                            rfq_status: r.status,
+                                            available_to: r.available_to
                                         });
                                     }
                                 });
@@ -5693,13 +5758,18 @@
                                 const r = rfqs.find(rfq => rfq.id === d.rfq_id);
                                 distributions.push({
                                     ...d,
-                                    rfq_number: r ? r.rfq_number : 'RFQ-XXX'
+                                    rfq_number: r ? r.rfq_number : 'RFQ-XXX',
+                                    rfq_status: r ? r.status : 'Draft',
+                                    available_to: r ? r.available_to : ''
                                 });
                             }
                         });
                     }
 
-                    const activeDists = distributions.filter(d => d.sent_at && d.status !== 'Closed');
+                    const activeDists = distributions.filter(d => {
+                        const isExpired = d.status === 'Expired' || d.rfq_status === 'Closed' || d.rfq_status === 'Expired' || (d.available_to && new Date() > new Date(d.available_to));
+                        return d.sent_at && d.status !== 'Closed' && !isExpired;
+                    });
                     if (activeDists.length === 0) {
                         html += `<li class="px-3 py-1 text-muted fs-9" style="list-style-type: none;">No active RFQs</li>`;
                     } else {
@@ -5741,7 +5811,9 @@
                                     if (d.transporter_id === currentTransporterId) {
                                         distributions.push({
                                             ...d,
-                                            request_number: r.request_number
+                                            request_number: r.request_number,
+                                            request_status: r.status,
+                                            expires_at: r.expires_at
                                         });
                                     }
                                 });
@@ -5754,13 +5826,18 @@
                                 const r = reqs.find(req => req.id === d.request_id);
                                 distributions.push({
                                     ...d,
-                                    request_number: r ? r.request_number : 'TRQ-XXX'
+                                    request_number: r ? r.request_number : 'TRQ-XXX',
+                                    request_status: r ? r.status : 'Draft',
+                                    expires_at: r ? r.expires_at : null
                                 });
                             }
                         });
                     }
 
-                    const activeDists = distributions.filter(d => d.sent_at && d.status !== 'Closed');
+                    const activeDists = distributions.filter(d => {
+                        const isExpired = d.status === 'Expired' || d.request_status === 'Closed' || d.request_status === 'Expired' || (d.expires_at && new Date() > new Date(d.expires_at));
+                        return d.sent_at && d.status !== 'Closed' && !isExpired;
+                    });
                     if (activeDists.length === 0) {
                         html += `<li class="px-3 py-1 text-muted fs-9" style="list-style-type: none;">No active Bids</li>`;
                     } else {
@@ -5811,7 +5888,6 @@
                     <li class="sidebar-nav-item" data-target="panel-master-list">
                         <a href="#"><i class="fa-solid fa-rectangle-list"></i> Master List</a>
                     </li>
-
                     <li class="sidebar-nav-item" data-target="panel-audit">
                         <a href="#"><i class="fa-solid fa-shield-halved"></i> Audit Trail</a>
                     </li>
@@ -5919,28 +5995,19 @@
                 }
 
                 // Calculate RFQ stats
-                const rfqs = await getRFQs();
                 let distributions = [];
                 if (serverMode) {
-                    for (const r of rfqs) {
-                        const details = await getRFQDetails(r.id);
-                        if (details && details.distributions) {
-                            details.distributions.forEach(d => {
-                                if (d.vendor_id === currentVendorId) {
-                                    distributions.push({
-                                        ...d,
-                                        rfq_number: r.rfq_number,
-                                        project_name: r.project_name,
-                                        rfq_date: r.rfq_date,
-                                        available_from: r.available_from,
-                                        available_to: r.available_to,
-                                        delivery_date: r.delivery_date
-                                    });
-                                }
-                            });
+                    try {
+                        const distsRes = await fetch(`${API_URL}/vendor-portal/distributions/${currentVendorId}`);
+                        const distsJson = await distsRes.json();
+                        if (distsJson.success) {
+                            distributions = distsJson.data;
                         }
+                    } catch (err) {
+                        console.error("Error loading vendor portal distributions:", err);
                     }
                 } else {
+                    const rfqs = await getRFQs();
                     const distsDb = JSON.parse(localStorage.getItem('semco_distributions')) || [];
                     distsDb.forEach(d => {
                         if (d.vendor_id === currentVendorId) {
@@ -5986,7 +6053,13 @@
                 const tbody = document.getElementById('vendor-dashboard-rfqs-tbody');
                 if (tbody) {
                     tbody.innerHTML = '';
-                    const activeDists = distributions.filter(d => (d.sent_at || d.status === 'Opened' || d.status === 'Sent') && d.status !== 'Submitted' && d.status !== 'Closed');
+                    const activeDists = distributions.filter(d => 
+                        (d.sent_at || d.status === 'Opened' || d.status === 'Sent') && 
+                        d.status !== 'Submitted' && 
+                        d.status !== 'Closed' && 
+                        d.status !== 'Expired' && 
+                        !(d.available_to && new Date() > new Date(d.available_to))
+                    );
                     if (activeDists.length === 0) {
                         tbody.innerHTML = `<tr><td colspan="6" class="text-muted py-3">No active sourcing requests found.</td></tr>`;
                     } else {
@@ -6015,32 +6088,43 @@
                     }
                 }
 
-                // Render Submitted Bids list table
+                // Render Submitted / Closed Bids list table
                 const submittedTbody = document.getElementById('vendor-dashboard-submitted-tbody');
                 if (submittedTbody) {
                     submittedTbody.innerHTML = '';
-                    const submittedDists = distributions.filter(d => d.status === 'Submitted' || d.status === 'Closed');
+                    const submittedDists = distributions.filter(d => 
+                        d.status === 'Submitted' || 
+                        d.status === 'Closed' || 
+                        d.status === 'Expired' || 
+                        (d.available_to && new Date() > new Date(d.available_to))
+                    );
                     if (submittedDists.length === 0) {
                         submittedTbody.innerHTML = `<tr><td colspan="6" class="text-muted py-3">No submitted bids found.</td></tr>`;
                     } else {
                         submittedDists.forEach(d => {
                             const tr = document.createElement('tr');
                             let badgeClass = 'badge-submitted';
-                            if (d.status === 'Closed') badgeClass = 'badge-closed';
+                            let statusText = d.status;
+                            let btnHTML = `<button class="btn btn-sm btn-outline-secondary py-1 px-3 fs-9" onclick="switchTab('panel-vendor-portal', '${d.token}')"><i class="fa-solid fa-eye me-1"></i> View Bid</button>`;
+
+                            const isRfqExpired = d.status === 'Expired' || d.status === 'Closed' || (d.available_to && new Date() > new Date(d.available_to));
+                            if (isRfqExpired && d.status !== 'Submitted') {
+                                badgeClass = 'badge-closed';
+                                statusText = 'Closed';
+                                btnHTML = `<button class="btn btn-sm btn-outline-secondary py-1 px-3 fs-9" disabled><i class="fa-solid fa-lock me-1"></i> Closed</button>`;
+                            }
 
                             const windowFrom = formatDate(d.available_from);
                             const windowTo = formatDate(d.available_to);
                             const windowText = `${windowFrom} to ${windowTo}`;
                             const deliveryText = formatDate(d.delivery_date);
 
-                            const btnHTML = `<button class="btn btn-sm btn-outline-secondary py-1 px-3 fs-9" onclick="switchTab('panel-vendor-portal', '${d.token}')"><i class="fa-solid fa-eye me-1"></i> View Bid</button>`;
-
                             tr.innerHTML = `
                                 <td class="text-primary fw-bold">${d.rfq_number}</td>
                                 <td class="fw-semibold text-dark text-start">${d.project_name}</td>
                                 <td class="text-secondary">${windowText}</td>
                                 <td class="text-secondary">${deliveryText}</td>
-                                <td><span class="status-badge ${badgeClass}">${d.status}</span></td>
+                                <td><span class="status-badge ${badgeClass}">${statusText}</span></td>
                                 <td>${btnHTML}</td>
                             `;
                             submittedTbody.appendChild(tr);
@@ -7230,9 +7314,9 @@
             }
 
             const filtered = vendors.filter(v => 
-                v.name.toLowerCase().includes(searchVal) || 
+                (v.name || '').toLowerCase().includes(searchVal) || 
                 (v.category && v.category.toLowerCase().includes(searchVal)) || 
-                v.id.toLowerCase().includes(searchVal)
+                (v.id || '').toLowerCase().includes(searchVal)
             );
 
             if (filtered.length === 0) {
@@ -7320,7 +7404,7 @@
                             <div class="fs-8 fw-semibold">GST: ${v.gst_number || 'N/A'}</div>
                             <div class="text-secondary fs-8">PAN: ${v.pan_number || 'N/A'}</div>
                         </td>
-                        <td><span class="badge bg-primary fs-8">${v.category}</span></td>
+                        <td><span class="badge bg-primary fs-8">${v.category || 'Uncategorized'}</span></td>
                         <td class="text-center">
                             <div class="d-flex justify-content-center gap-1">
                                 <button class="btn btn-xs btn-outline-primary" onclick="openEditVendorModal('${v.id}')" title="Edit Vendor"><i class="fa-solid fa-pen-to-square"></i></button>
@@ -7382,7 +7466,7 @@
                         <div class="fs-8 fw-semibold">GST: ${v.gst_number || 'N/A'}</div>
                         <div class="text-secondary fs-8">PAN: ${v.pan_number || 'N/A'}</div>
                     </td>
-                    <td><span class="badge bg-primary fs-8">${v.category}</span></td>
+                    <td><span class="badge bg-primary fs-8">${v.category || 'Uncategorized'}</span></td>
                     <td class="text-center">
                         <button class="btn btn-xs btn-outline-success me-1" onclick="recoverVendor('${v.id}')" title="Recover Vendor"><i class="fa-solid fa-rotate-left"></i></button>
                         <button class="btn btn-xs btn-outline-danger" onclick="deleteVendor('${v.id}')" title="Permanently Delete Vendor"><i class="fa-solid fa-trash"></i></button>
@@ -8099,6 +8183,7 @@
             triggerInAppAlert('Vendor Updated', `Vendor ${body.name} details updated.`);
             bootstrap.Modal.getInstance(document.getElementById('editVendorModal')).hide();
             refreshVendorsTable();
+            if (typeof refreshMasterListTab === 'function') refreshMasterListTab('vendor');
         });
 
         // Delete Vendor
@@ -8194,6 +8279,7 @@
                     triggerInAppAlert(alertTitle, alertMsg);
                     alert(isArchived ? 'Vendor has been permanently deleted' : 'Vendor has been archived');
                     refreshVendorsTable();
+                    if (typeof refreshMasterListTab === 'function') refreshMasterListTab('vendor');
                 }
             );
         }
@@ -8252,6 +8338,7 @@
                     triggerInAppAlert('Vendor Recovered', `Vendor "${vendorName}" has been successfully recovered.`);
                     alert('Vendor has been recovered');
                     refreshVendorsTable();
+                    if (typeof refreshMasterListTab === 'function') refreshMasterListTab('vendor');
                 }
             );
         }
@@ -8483,8 +8570,8 @@
                             const category = String(row.product_category || row.category || row['Product Category'] || row.Category || 'Raw Materials (Pipes/Sheets)').trim();
                             
                             const existing = allVendors.find(v => 
-                                v.name.toLowerCase() === name.toLowerCase() || 
-                                (email && v.email && v.email.toLowerCase() === email.toLowerCase())
+                                (v.name || '').toLowerCase() === name.toLowerCase() || 
+                                (email && v.email && (v.email || '').toLowerCase() === email.toLowerCase())
                             );
                             
                             if (existing) {
@@ -8584,6 +8671,17 @@
             const count = serverMode ? 3 : (JSON.parse(localStorage.getItem('semco_rfqs')) || []).length;
             document.getElementById('rfq-form-number').value = `RFQ-2026-${String(count + 1).padStart(3, '0')}`;
             document.getElementById('rfq-items-tbody').innerHTML = '';
+            
+            // Reset Excel variables and UI indicators
+            currentEditingRfqExcelFilename = "";
+            currentEditingRfqExcelPath = "";
+            const fileInput = document.getElementById('rfq-excel-file');
+            if (fileInput) {
+                fileInput.value = '';
+                fileInput._lastUploadedFile = null;
+            }
+            const indicator = document.getElementById('rfq-excel-attached-indicator');
+            if (indicator) indicator.classList.add('d-none');
             
             // Restore standard headers
             const table = document.getElementById('rfq-items-table');
@@ -8787,6 +8885,15 @@
             // Store reference for upload after save
             event.target._lastUploadedFile = file;
 
+            currentEditingRfqExcelFilename = file.name;
+            currentEditingRfqExcelPath = ""; // reset path since it's a new upload
+            const indicator = document.getElementById('rfq-excel-attached-indicator');
+            const nameSpan = document.getElementById('rfq-excel-attached-name');
+            if (indicator && nameSpan) {
+                nameSpan.textContent = file.name;
+                indicator.classList.remove('d-none');
+            }
+
             // Get Base64 of the file for offline preview download
             const b64Reader = new FileReader();
             b64Reader.onload = function(e) {
@@ -8942,7 +9049,9 @@
                 items,
                 vendor_ids: selectedVendors,
                 custom_headers: customHeadersVal || JSON.stringify(["MOC", "Description", "Make", "Size", "Quantity", "Unit"]),
-                allow_spec_sheet: document.getElementById('rfq-allow-spec-sheet')?.checked ? 1 : 0
+                allow_spec_sheet: document.getElementById('rfq-allow-spec-sheet')?.checked ? 1 : 0,
+                excel_filename: currentEditingRfqExcelFilename,
+                excel_path: currentEditingRfqExcelPath
             };
 
             let rfqId;
@@ -9127,7 +9236,9 @@
                 items,
                 vendor_ids: selectedVendors,
                 custom_headers: customHeadersVal || JSON.stringify(["MOC", "Description", "Make", "Size", "Quantity", "Unit"]),
-                allow_spec_sheet: document.getElementById('rfq-allow-spec-sheet')?.checked ? 1 : 0
+                allow_spec_sheet: document.getElementById('rfq-allow-spec-sheet')?.checked ? 1 : 0,
+                excel_filename: currentEditingRfqExcelFilename,
+                excel_path: currentEditingRfqExcelPath
             };
 
             let rfqId;
@@ -9285,9 +9396,48 @@
 
         // ========== RFQ LIFECYCLE TRACKING (MODULE 5 & 6) ==========
         async function refreshRFQTrackingGrid() {
-            const rfqs = await getRFQs();
             const tbody = document.getElementById('tracking-tbody');
+            if (!tbody) return;
+
+            // Show loading skeleton
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="text-center py-4">
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                        <span class="text-secondary">Loading RFQ Tracking Data...</span>
+                    </td>
+                </tr>`;
+
+            let rfqs = [];
+            try {
+                const data = await getRFQs();
+                rfqs = Array.isArray(data) ? data : [];
+            } catch (err) {
+                console.error('[Tracking] Failed to fetch RFQs:', err);
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center py-4 text-danger">
+                            <i class="fa-solid fa-triangle-exclamation me-2"></i>
+                            Failed to load tracking data. Please refresh the page.
+                        </td>
+                    </tr>`;
+                return;
+            }
+
             tbody.innerHTML = '';
+
+            if (rfqs.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center py-5">
+                            <div style="opacity:0.5;">
+                                <i class="fa-solid fa-inbox fa-2x mb-2 d-block text-secondary"></i>
+                                <div class="text-secondary fs-7 fw-semibold">No RFQs found. Create and launch an RFQ to see it here.</div>
+                            </div>
+                        </td>
+                    </tr>`;
+                return;
+            }
 
             rfqs.forEach(r => {
                 const sent = r.vendor_sent_count || 0;
@@ -9346,15 +9496,16 @@
                     `;
                 }
 
+                const statusStr = (r.status || 'draft').toLowerCase().replace(/\s+/g, '');
                 tr.innerHTML = `
                     <td class="text-primary fw-bold" style="font-size:0.75rem;">
                         <a href="#" onclick="openRFQDetailsModal('${r.id}'); return false;" class="text-decoration-none fw-bold"><i class="fa-solid fa-folder-open me-1"></i>${r.rfq_number}</a>
                     </td>
                     <td>
-                        <div class="fw-bold text-dark">${r.project_name}</div>
-                        <div class="text-secondary fs-8">Buyer: ${r.buyer_name}</div>
+                        <div class="fw-bold text-dark">${r.project_name || '-'}</div>
+                        <div class="text-secondary fs-8">Buyer: ${r.buyer_name || '-'}</div>
                     </td>
-                    <td class="text-secondary font-weight-semibold">${r.delivery_date}</td>
+                    <td class="text-secondary font-weight-semibold">${r.delivery_date || '-'}</td>
                     <td><span class="badge bg-secondary font-normal fs-8">${r.department || 'Procurement'}</span></td>
                     <td style="width: 200px;">
                         <div class="d-flex align-items-center gap-2">
@@ -9364,7 +9515,7 @@
                              <span class="fs-8 fw-semibold">${done}/${sent} (${pct}%)</span>
                         </div>
                     </td>
-                    <td><span class="status-badge badge-${r.status.toLowerCase().replace(' ', '')}">${r.status}</span></td>
+                    <td><span class="status-badge badge-${statusStr}">${r.status || 'Draft'}</span></td>
                     <td class="text-center" style="white-space: nowrap; min-width: 210px;">${actionsHTML}</td>
                 `;
                 tbody.appendChild(tr);
@@ -9624,8 +9775,34 @@
             document.getElementById('rfq-form-delivery-date').value = details.rfq.delivery_date;
             document.getElementById('rfq-form-dept').value = details.rfq.department || 'Procurement';
             document.getElementById('rfq-form-buyer').value = details.rfq.buyer_name;
+            
+            // Set allow_spec_sheet checkbox checked status
+            const allowCheckbox = document.getElementById('rfq-allow-spec-sheet');
+            if (allowCheckbox) {
+                allowCheckbox.checked = details.rfq.allow_spec_sheet === 1;
+            }
 
-            // Load items
+            // Save filename and path globally for updates
+            currentEditingRfqExcelFilename = details.rfq.excel_filename || "";
+            currentEditingRfqExcelPath = details.rfq.excel_path || "";
+            
+            // Populate attached file indicator in form
+            const indicator = document.getElementById('rfq-excel-attached-indicator');
+            const nameSpan = document.getElementById('rfq-excel-attached-name');
+            if (details.rfq.excel_filename && indicator && nameSpan) {
+                nameSpan.textContent = details.rfq.excel_filename;
+                indicator.classList.remove('d-none');
+            } else if (indicator) {
+                indicator.classList.add('d-none');
+            }
+
+            // Clear file upload input
+            const fileInput = document.getElementById('rfq-excel-file');
+            if (fileInput) {
+                fileInput.value = '';
+                fileInput._lastUploadedFile = null;
+            }
+
             const tbody = document.getElementById('rfq-items-tbody');
             tbody.innerHTML = '';
             
@@ -9843,26 +10020,57 @@
             currentToken = token;
             let details;
 
+            // Helper: show a clear error message inside the loading card
+            function showPortalError(msg) {
+                if (loadingCard) {
+                    loadingCard.innerHTML = `
+                        <div class="text-center py-5 px-4">
+                            <div class="mb-3" style="font-size:3rem; color:#dc2626;"><i class="fa-solid fa-circle-xmark"></i></div>
+                            <h5 class="fw-bold text-dark mb-2">Access Denied</h5>
+                            <p class="text-secondary fs-8 mb-4">${msg || 'Unable to access this RFQ portal. Please contact the administrator.'}</p>
+                            <p class="text-muted fs-9">If you believe this is an error, ask the admin to resend the invitation link.</p>
+                        </div>`;
+                    loadingCard.classList.remove('d-none');
+                }
+            }
+
             if (serverMode) {
-                const res = await fetch(`${API_URL}/vendor-portal/verify?token=${token}`);
-                const json = await res.json();
-                if (!json.success) {
-                    alert(json.message);
-                    if (loadingCard) loadingCard.classList.add('d-none');
-                    if (placeholderCard) placeholderCard.classList.remove('d-none');
-                    handleSignOut();
+                try {
+                    const res = await fetch(`${API_URL}/vendor-portal/verify?token=${encodeURIComponent(token)}`);
+                    let json;
+                    try {
+                        json = await res.json();
+                    } catch (_) {
+                        showPortalError('The server returned an unexpected response. Please try again later.');
+                        return;
+                    }
+                    if (!json.success) {
+                        showPortalError(json.message || 'Invalid or expired access link.');
+                        return;
+                    }
+                    details = json.data;
+                } catch (err) {
+                    console.error('[Vendor Portal] Verify fetch failed:', err);
+                    showPortalError('Could not connect to the server. Please check your internet connection and try again.');
                     return;
                 }
-                details = json.data;
             } else {
                 // Offline LocalStorage Token Decoding
                 const dists = JSON.parse(localStorage.getItem('semco_distributions'));
                 const dist = dists.find(d => d.token === token);
                 if (!dist) {
-                    alert("Your account does not exist. Please contact the administrator for further assistance.");
-                    if (loadingCard) loadingCard.classList.add('d-none');
-                    if (placeholderCard) placeholderCard.classList.remove('d-none');
-                    handleSignOut();
+                    showPortalError('Your account does not exist. Please contact the administrator for further assistance.');
+                    return;
+                }
+
+                const rfqDetails = await getRFQDetails(dist.rfq_id);
+                const rfqObj = rfqDetails.rfq;
+                const isRfqExpired = rfqObj.available_to && new Date() > new Date(rfqObj.available_to);
+
+                if (dist.status !== 'Submitted' && (rfqObj.status === 'Closed' || rfqObj.status === 'Expired' || isRfqExpired)) {
+                    showPortalError(rfqObj.status === 'Closed'
+                        ? 'This RFQ has been closed manually by the administrator.'
+                        : 'This RFQ bidding window has expired. Quotes are no longer accepted.');
                     return;
                 }
 
@@ -9874,7 +10082,6 @@
                     addAuditLog('Vendor Portal', 'RFQ_OPENED', `Vendor opened link for RFQ id ${dist.rfq_id}`);
                 }
 
-                const rfqDetails = await getRFQDetails(dist.rfq_id);
                 const quotes = JSON.parse(localStorage.getItem('semco_quotes')).filter(q => q.rfq_id === dist.rfq_id && q.vendor_id === dist.vendor_id);
                 
                 // Map quotes rate
@@ -9898,12 +10105,8 @@
                 };
             }
 
-            // Set current vendor ID
+            // Set current vendor ID (backend verify already validated existence & archived status)
             currentVendorId = details.vendor.vendor_id || details.vendor.vendorId || details.vendor.id;
-
-            // Check vendor status
-            const isActive = await checkActiveVendorStatus(true);
-            if (!isActive) return;
 
             // Populate Portal UI
             document.getElementById('vendor-portal-rfq-num').textContent = details.rfq.rfq_number;
@@ -9992,11 +10195,17 @@
                     }
 
                     const timerEl = document.getElementById('v-portal-timer');
+                    // Clear any stale interval from a previous portal load before starting fresh
+                    if (vendorPortalTimerInterval) {
+                        clearInterval(vendorPortalTimerInterval);
+                        vendorPortalTimerInterval = null;
+                    }
                     function updateVendorTimer() {
                         const now = new Date().getTime();
                         const diff = expiresTime - now;
                         if (diff <= 0) {
                             clearInterval(vendorPortalTimerInterval);
+                            vendorPortalTimerInterval = null;
                             if (timerEl) {
                                 timerEl.textContent = "Expired!";
                                 timerEl.className = "fw-bold text-danger fs-7";
@@ -10072,12 +10281,12 @@
             const lockIndicator = document.getElementById('vendor-portal-lock-indicator');
             const actionsDiv = document.getElementById('vendor-portal-actions');
 
-            const isLocked = isSubmitted || isExpired;
+            const isLocked = isSubmitted || isExpired || details.rfq.status === 'Closed' || details.rfq.status === 'Expired';
             finalCostInput.readOnly = isLocked;
             if (ptInput) ptInput.readOnly = isLocked;
 
             if (isLocked) {
-                lockIndicator.innerHTML = isExpired 
+                lockIndicator.innerHTML = (isExpired || details.rfq.status === 'Closed' || details.rfq.status === 'Expired') 
                     ? '<span class="status-badge badge-closed"><i class="fa-solid fa-hourglass-end me-1"></i> Submission Closed</span>'
                     : '<span class="status-badge badge-submitted"><i class="fa-solid fa-lock me-1"></i> Submission Locked</span>';
                 actionsDiv.classList.add('d-none');
@@ -10596,12 +10805,6 @@
 
         // Submit Quotation (autoloader and final validation)
         async function submitVendorQuotation(finalSubmit) {
-            const isActive = await checkActiveVendorStatus(true);
-            if (!isActive) {
-                alert("Your account is currently inactive. You cannot submit or save quotes.");
-                return;
-            }
-
             const rows = document.querySelectorAll('#vendor-portal-items-tbody tr');
             const quotes = [];
             let isValid = true;
@@ -10741,9 +10944,27 @@
             }
 
             if (finalSubmit) {
-                showCustomAlert('Submission Recorded', 'You are not the L1 vendor for this RFQ yet but your participation is highly valued');
+                showCustomAlert('Submission Recorded', 'Your bid has been submitted successfully! View your submission status in your dashboard.');
+                // Re-verify the token so currentVendorId is confirmed fresh, then navigate to dashboard
+                // This ensures the "Submitted Bids & Quotations" table is populated immediately.
+                if (serverMode && currentToken) {
+                    try {
+                        const reVerify = await fetch(`${API_URL}/vendor-portal/verify?token=${encodeURIComponent(currentToken)}`);
+                        const reVerifyJson = await reVerify.json();
+                        if (reVerifyJson.success && reVerifyJson.data) {
+                            currentVendorId = reVerifyJson.data.vendor?.vendor_id ||
+                                             reVerifyJson.data.vendor?.id ||
+                                             reVerifyJson.data.vendor_id ||
+                                             currentVendorId;
+                        }
+                    } catch (reVerifyErr) {
+                        console.warn('[Post-Submit Re-verify] Could not re-verify token, using cached currentVendorId:', reVerifyErr);
+                    }
+                }
                 await renderSidebar();
                 await switchTab('panel-vendor-dashboard');
+                // Explicitly await the dashboard refresh to guarantee the new bid appears
+                await refreshVendorDashboard();
             } else {
                 alert("Draft quotes saved successfully.");
                 simulateVendorPortalTokenAccess(currentToken);
@@ -11391,7 +11612,7 @@
             const l1 = rankings[0];
             const l2 = rankings[1] || null;
 
-            // 1. Commercial Analysis  (all-inclusive costs)
+            // 1. Commercial Analysis (all-inclusive costs)
             const l1IncCost = l1.inclusive_cost > 0 ? l1.inclusive_cost : l1.total_rate;
             let comm = `<b>L1 Bidder</b> is <b>${l1.vendor}</b> with an <b>all-inclusive cost of ₹${l1IncCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b> (inclusive of GST, taxes and transport charges). `;
             if (l2) {
@@ -11516,9 +11737,12 @@
                 } catch (e) {
                     console.error("Error loading dashboard stats:", e);
                 }
-            }
-
-            if (!stats) {
+                
+                if (!stats) {
+                    console.warn("[Dashboard] Could not fetch stats from Vercel server.");
+                    return;
+                }
+            } else {
                 // Local calculation fallback
                 const dists = JSON.parse(localStorage.getItem('semco_distributions')) || [];
                 const rfqsList = JSON.parse(localStorage.getItem('semco_rfqs')) || [];
@@ -12157,6 +12381,13 @@
                     }
                 }
             });
+
+            // Stamp the last-updated time so users know exactly when data was received
+            const tsEl = document.getElementById('dashboard-last-updated');
+            if (tsEl) {
+                const now = new Date();
+                tsEl.textContent = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            }
         }
 // ========== APPLICATION ROLE MANAGEMENT ==========
         function switchRole(role) {
@@ -12225,6 +12456,7 @@
                 bootstrap.Modal.getInstance(document.getElementById('addTransporterModal')).hide();
                 document.getElementById('add-transporter-form').reset();
                 await refreshTransportersView();
+                if (typeof refreshMasterListTab === 'function') refreshMasterListTab('transporter');
             } catch (err) {
                 console.error("Error creating transporter:", err);
                 alert("Failed to add transporter: " + err.message);
@@ -12300,6 +12532,7 @@
                 showCustomAlert('Transporter Updated', `Details for ${body.name} successfully saved.`);
                 bootstrap.Modal.getInstance(document.getElementById('editTransporterModal')).hide();
                 await refreshTransportersView();
+                if (typeof refreshMasterListTab === 'function') refreshMasterListTab('transporter');
             } catch (err) {
                 console.error("Error editing transporter:", err);
                 alert("Failed to update transporter: " + err.message);
@@ -12390,6 +12623,7 @@
                         triggerInAppAlert(alertTitle, alertMsg);
                         alert(isArchived ? 'Transporter has been permanently deleted' : 'Transporter has been archived');
                         await refreshTransportersView();
+                        if (typeof refreshMasterListTab === 'function') refreshMasterListTab('transporter');
                     } catch (err) {
                         console.error("Error deleting transporter:", err);
                         alert("Failed to delete transporter: " + err.message);
@@ -12450,6 +12684,7 @@
                         triggerInAppAlert('Transporter Recovered', `Transporter "${transporterName}" has been successfully recovered.`);
                         alert('Transporter has been recovered');
                         await refreshTransportersView();
+                        if (typeof refreshMasterListTab === 'function') refreshMasterListTab('transporter');
                     } catch (err) {
                         console.error("Error recovering transporter:", err);
                         alert("Failed to recover transporter: " + err.message);
@@ -12500,7 +12735,7 @@
                         <div class="fs-8 fw-semibold">GST: ${t.gst_number || 'N/A'}</div>
                         <div class="text-secondary fs-8">PAN: ${t.pan_number || 'N/A'}</div>
                     </td>
-                    <td><span class="badge bg-primary fs-8">${t.category}</span></td>
+                    <td><span class="badge bg-primary fs-8">${t.category || 'Uncategorized'}</span></td>
                     <td class="text-center">
                         <button class="btn btn-xs btn-outline-success me-1" onclick="recoverTransporter('${t.id}')" title="Recover Transporter"><i class="fa-solid fa-rotate-left"></i></button>
                         <button class="btn btn-xs btn-outline-danger" onclick="deleteTransporter('${t.id}')" title="Permanently Delete Transporter"><i class="fa-solid fa-trash"></i></button>
@@ -12622,7 +12857,7 @@
                             <div class="fs-8 fw-semibold">GST: ${t.gst_number || 'N/A'}</div>
                             <div class="text-secondary fs-8">PAN: ${t.pan_number || 'N/A'}</div>
                         </td>
-                        <td><span class="badge bg-primary fs-8">${t.category}</span></td>
+                        <td><span class="badge bg-primary fs-8">${t.category || 'Uncategorized'}</span></td>
                         <td class="text-center">
                             <div class="d-flex justify-content-center gap-1">
                                 <button class="btn btn-xs btn-outline-primary" onclick="openEditTransporterModal('${t.id}')" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
@@ -13675,28 +13910,19 @@
                     setVal('t-dash-ifsc', t.ifsc_code);
                 }
 
-                const reqs = await getTransportRequests();
                 let distributions = [];
                 if (serverMode) {
-                    for (const r of reqs) {
-                        const details = await getTransportRequestDetails(r.id);
-                        if (details && details.distributions) {
-                            details.distributions.forEach(d => {
-                                if (d.transporter_id === currentTransporterId) {
-                                    distributions.push({
-                                        ...d,
-                                        request_number: r.request_number,
-                                        from_location: r.from_location,
-                                        to_location: r.to_location,
-                                        required_date: r.required_date,
-                                        expires_at: r.expires_at,
-                                        request_status: r.status
-                                    });
-                                }
-                            });
+                    try {
+                        const distsRes = await fetch(`${API_URL}/transporter-portal/distributions/${currentTransporterId}`);
+                        const distsJson = await distsRes.json();
+                        if (distsJson.success) {
+                            distributions = distsJson.data;
                         }
+                    } catch (err) {
+                        console.error("Error loading transporter distributions:", err);
                     }
                 } else {
+                    const reqs = await getTransportRequests();
                     const distsDb = JSON.parse(localStorage.getItem('semco_transport_distributions')) || [];
                     distsDb.forEach(d => {
                         if (d.transporter_id === currentTransporterId) {
@@ -13721,11 +13947,11 @@
                     let badgeClass = 'badge-sent';
                     let statusLabel = d.status;
                     let actionsHtml = '';
-                    const isExpired = d.status === 'Expired' || (d.expires_at && new Date() > new Date(d.expires_at));
+                    const isExpired = d.status === 'Expired' || d.request_status === 'Closed' || d.request_status === 'Expired' || (d.expires_at && new Date() > new Date(d.expires_at));
 
                     if (isExpired && d.status !== 'Submitted') {
                         badgeClass = 'badge-closed';
-                        statusLabel = 'Expired';
+                        statusLabel = d.request_status === 'Closed' ? 'Closed' : 'Expired';
                         actionsHtml = `<button class="btn btn-sm btn-outline-secondary py-1 px-3 fs-9" disabled><i class="fa-solid fa-lock me-1"></i> Closed</button>`;
                     } else if (d.status === 'Submitted') {
                         badgeClass = 'badge-submitted';
@@ -13848,19 +14074,27 @@
                     const transporters = JSON.parse(localStorage.getItem('semco_transporters')) || [];
                     const transporter = transporters.find(t => t.id === dist.transporter_id);
 
-                    if (req.status === 'Expired' || (req.expires_at && new Date() > new Date(req.expires_at))) {
+                    if (req.status === 'Expired' || req.status === 'Closed' || (req.expires_at && new Date() > new Date(req.expires_at))) {
                         if (dist.status !== 'Submitted' && dist.status !== 'Expired') {
                             dist.status = 'Expired';
                             localStorage.setItem('semco_transport_distributions', JSON.stringify(distsDb));
 
-                            req.status = 'Expired';
-                            localStorage.setItem('semco_transport_requests', JSON.stringify(requests));
+                            if (req.status !== 'Closed') {
+                                req.status = 'Expired';
+                                localStorage.setItem('semco_transport_requests', JSON.stringify(requests));
+                            }
                         }
-                        if (loadingCard) loadingCard.classList.add('d-none');
-                        mainCard.style.display = 'none';
-                        errorCard.style.display = 'block';
-                        if (errorMsg) errorMsg.textContent = 'This bid request window has expired. Quotes are no longer accepted.';
-                        return;
+                        if (dist.status !== 'Submitted') {
+                            if (loadingCard) loadingCard.classList.add('d-none');
+                            mainCard.style.display = 'none';
+                            errorCard.style.display = 'block';
+                            if (errorMsg) {
+                                errorMsg.textContent = req.status === 'Closed'
+                                    ? 'This transport request has been closed manually by the administrator.'
+                                    : 'This bid request window has expired. Quotes are no longer accepted.';
+                            }
+                            return;
+                        }
                     }
 
                     if (dist.status === 'Sent') {
@@ -13897,15 +14131,6 @@
             const transporter = data.transporter;
             currentTransporterId = transporter.id || null;
 
-            // Check active status
-            const isActive = await checkActiveTransporterStatus(true);
-            if (!isActive) {
-                if (loadingCard) loadingCard.classList.add('d-none');
-                mainCard.style.display = 'none';
-                errorCard.style.display = 'block';
-                if (errorMsg) errorMsg.textContent = "This secure link is no longer active because the transporter has been deactivated.";
-                return;
-            }
 
             document.getElementById('t-portal-token').value = token;
             document.getElementById('t-portal-transporter-info').textContent = `Transporter: ${transporter.name} (${transporter.id})`;
@@ -14156,6 +14381,7 @@
                     
                     if (diff <= 0) {
                         clearInterval(portalTimerInterval);
+                        portalTimerInterval = null;
                         timerEl.textContent = "Expired!";
                         timerEl.className = "fw-bold text-danger fs-7";
                         
@@ -14192,6 +14418,11 @@
             if (loadingCard) loadingCard.classList.add('d-none');
             mainCard.style.display = 'block';
 
+            // Clear any stale interval from a previous portal load before starting fresh
+            if (portalTimerInterval) {
+                clearInterval(portalTimerInterval);
+                portalTimerInterval = null;
+            }
             updateTimer();
             portalTimerInterval = setInterval(updateTimer, 1000);
         }
@@ -14311,13 +14542,6 @@
                 return;
             }
 
-            // --- Guard: transporter active check ---
-            const isActive = await checkActiveTransporterStatus(true);
-            if (!isActive) {
-                alert('Your transporter account is currently inactive. Please contact the administrator.');
-                return;
-            }
-
             const start_location = document.getElementById('t-quote-from').value;
             const end_location = document.getElementById('t-quote-to').value;
             const vehicle_size = document.getElementById('t-quote-vehicle-size').value;
@@ -14430,7 +14654,7 @@
                     }
                 }
 
-                showCustomAlert('Submission Recorded', 'You are not the L1 vendor for this RFQ yet but your participation is highly valued');
+                showCustomAlert('Submission Recorded', 'Your bid has been submitted successfully! View your submission status in your dashboard.');
                 
                 if (portalTimerInterval) {
                     clearInterval(portalTimerInterval);
@@ -14438,7 +14662,24 @@
                 }
 
                 if (currentRole === 'Transporter') {
+                    // Re-verify the token so currentTransporterId is confirmed fresh
+                    // This ensures the "Submitted Bids" table is populated immediately.
+                    if (serverMode && token) {
+                        try {
+                            const reVerify = await fetch(`${API_URL}/transporter-portal/verify?token=${encodeURIComponent(token)}`);
+                            const reVerifyJson = await reVerify.json();
+                            if (reVerifyJson.success && reVerifyJson.data) {
+                                currentTransporterId = reVerifyJson.data.transporter?.id ||
+                                                      reVerifyJson.data.transporter_id ||
+                                                      currentTransporterId;
+                            }
+                        } catch (reVerifyErr) {
+                            console.warn('[Post-Submit Re-verify] Could not re-verify transport token:', reVerifyErr);
+                        }
+                    }
                     await switchTab('panel-transporter-dashboard');
+                    // Explicitly await the dashboard refresh to guarantee the new bid appears
+                    await refreshTransporterDashboard();
                 } else {
                     await switchTab('panel-transporters');
                     document.getElementById('t-tracking-tab').click();
