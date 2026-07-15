@@ -38,7 +38,7 @@ const getFrontendUrl = (req) => {
       return `${refUrl.protocol}//${refUrl.host}`;
     } catch (_) {}
   }
-  return 'https://semcogroupsrfq.vercel.app';
+  return `http://localhost:${PORT}`;
 };
 
 // ─── Directories ─────────────────────────────────────────
@@ -1863,6 +1863,89 @@ app.post('/api/vendor-portal/upload-doc', upload.array('files', 10), (req, res) 
       .run(firstDoc.path, firstDoc.name, JSON.stringify(savedDocsList), rfq_id, vendor_id);
 
     logAudit(vendor_id, 'VENDOR_DOC_UPLOAD_MULTIPLE', `Vendor ${vendor_id} uploaded ${savedDocsList.length} supporting docs for RFQ ${rfq_id}`, req);
+
+    // ── Notify admins asynchronously ──────────────────────────────────────────
+    (async () => {
+      try {
+        // Resolve vendor name
+        const vendorRow = db.prepare('SELECT name, company_name FROM vendors WHERE id = ?').get(vendor_id);
+        const vendorName = (vendorRow && (vendorRow.company_name || vendorRow.name)) || vendor_id;
+
+        // Resolve RFQ details
+        const rfqRow = db.prepare('SELECT rfq_number, project_name FROM rfqs WHERE id = ?').get(rfq_id);
+        const rfqNumber  = rfqRow ? rfqRow.rfq_number  : rfq_id;
+        const projectName = rfqRow ? (rfqRow.project_name || '-') : '-';
+
+        // Collect all Procurement Admin emails from the users table
+        // Use simple WHERE (JsonDB limitation) and filter email in JS
+        const adminUsers = db.prepare("SELECT email FROM users WHERE role = 'Procurement Admin'").all();
+        const adminEmails = adminUsers.map(u => u.email).filter(Boolean);
+        if (adminEmails.length === 0) {
+          // Fallback to SMTP sender as admin
+          const fallback = process.env.SMTP_USER || process.env.SENDGRID_FROM_EMAIL;
+          if (fallback) adminEmails.push(fallback);
+        }
+
+        if (adminEmails.length === 0) return; // No admin to notify
+
+        // Build document list HTML
+        const docsHtml = savedDocsList.map(d => `<li style="margin-bottom:4px;">📎 ${d.name}</li>`).join('');
+
+        const subject = `📄 Specification Sheet Shared — ${vendorName} | RFQ ${rfqNumber}`;
+        const html = `
+          <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+            <div style="background:#0f172a;padding:24px 32px;">
+              <h2 style="color:#ffffff;margin:0;font-size:18px;">📄 Supporting Document Shared</h2>
+              <p style="color:#94a3b8;margin:6px 0 0;font-size:13px;">SEMCO Smart RFQ Platform — Vendor Notification</p>
+            </div>
+            <div style="padding:28px 32px;background:#ffffff;">
+              <p style="color:#1e293b;font-size:15px;margin-top:0;">
+                A vendor has uploaded a <strong>specification sheet / supporting document</strong> for an active RFQ.
+              </p>
+              <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px;">
+                <tr style="background:#f8fafc;">
+                  <td style="padding:10px 14px;color:#64748b;width:40%;border-bottom:1px solid #e2e8f0;"><strong>Vendor</strong></td>
+                  <td style="padding:10px 14px;color:#1e293b;border-bottom:1px solid #e2e8f0;">${vendorName}</td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 14px;color:#64748b;border-bottom:1px solid #e2e8f0;"><strong>RFQ Number</strong></td>
+                  <td style="padding:10px 14px;color:#1e293b;border-bottom:1px solid #e2e8f0;">${rfqNumber}</td>
+                </tr>
+                <tr style="background:#f8fafc;">
+                  <td style="padding:10px 14px;color:#64748b;border-bottom:1px solid #e2e8f0;"><strong>Project</strong></td>
+                  <td style="padding:10px 14px;color:#1e293b;border-bottom:1px solid #e2e8f0;">${projectName}</td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 14px;color:#64748b;"><strong>Documents (${savedDocsList.length})</strong></td>
+                  <td style="padding:10px 14px;color:#1e293b;">
+                    <ul style="margin:0;padding-left:18px;">${docsHtml}</ul>
+                  </td>
+                </tr>
+              </table>
+              <p style="color:#64748b;font-size:13px;margin-top:20px;">
+                The attached file(s) are included with this email. Log in to the RFQ portal to review the full submission.
+              </p>
+            </div>
+            <div style="background:#f1f5f9;padding:14px 32px;text-align:center;">
+              <p style="color:#94a3b8;font-size:12px;margin:0;">© ${new Date().getFullYear()} SEMCO Groups — Automated Procurement Notification</p>
+            </div>
+          </div>
+        `;
+
+        // Attach the uploaded files
+        const attachPaths = savedDocsList.map(d => d.path);
+        const attachNames = savedDocsList.map(d => d.name);
+
+        for (const adminEmail of adminEmails) {
+          await sendMailViaSmtp(adminEmail, subject, html, attachPaths, attachNames);
+          console.log(`[Doc Upload] Notification sent to admin ${adminEmail} — ${savedDocsList.length} doc(s) from vendor ${vendorName}`);
+        }
+      } catch (emailErr) {
+        console.error('[Doc Upload] Failed to send admin notification:', emailErr.message);
+      }
+    })().catch(err => console.error('[Doc Upload] Async email error:', err.message));
+    // ─────────────────────────────────────────────────────────────────────────
+
     res.json({ success: true, files: savedDocsList });
   } catch (err) {
     uploadedFiles.forEach(f => cleanUpFile(f.path));
@@ -2070,11 +2153,13 @@ app.get('/api/rfqs/:id/comparative', (req, res) => {
         preferred: d.preferred, total_value: 0,
         avg_lead_time: 0, item_count: 0, status: d.status,
         final_cost: parseFloat(d.final_cost) || 0,
+        cgst_applicable: d.cgst_applicable || 0,
+        sgst_applicable: d.sgst_applicable || 0,
         transport_included: d.transport_included || 0,
-        transport_packaging: d.transport_packaging || 0,
-        transport_freight: d.transport_freight || 0,
-        transport_loading: d.transport_loading || 0,
-        transport_other: d.transport_other || 0,
+        transport_packaging: parseFloat(d.transport_packaging) || 0,
+        transport_freight: parseFloat(d.transport_freight) || 0,
+        transport_loading: parseFloat(d.transport_loading) || 0,
+        transport_other: parseFloat(d.transport_other) || 0,
         payment_terms: d.payment_terms || ''
       };
     }
@@ -2091,20 +2176,30 @@ app.get('/api/rfqs/:id/comparative', (req, res) => {
       }
     }
 
+    // Sort by all-inclusive cost (final_cost when available, else raw total_value)
     const rankingArray = Object.values(vendorTotals)
-      .map(v => { if (v.item_count > 0) v.avg_lead_time = Math.round(v.avg_lead_time / v.item_count); return v; })
-      .filter(v => v.total_value > 0)
-      .sort((a, b) => a.total_value - b.total_value);
+      .map(v => {
+        if (v.item_count > 0) v.avg_lead_time = Math.round(v.avg_lead_time / v.item_count);
+        // inclusive_cost: prefer vendor-confirmed final_cost; fall back to raw item total
+        v.inclusive_cost = v.final_cost > 0 ? v.final_cost : v.total_value;
+        return v;
+      })
+      .filter(v => v.total_value > 0 || v.final_cost > 0)
+      .sort((a, b) => a.inclusive_cost - b.inclusive_cost);
 
     const rankings = rankingArray.map((v, i) => ({
       rank: i + 1,
       vendor_id: v.vendor_id,
       vendor: v.vendor_name,
       total_rate: v.total_value,
+      inclusive_cost: v.inclusive_cost,
       lead_time: v.avg_lead_time,
-      difference: i === 0 ? '0.0%' : (((v.total_value - rankingArray[0].total_value) / rankingArray[0].total_value) * 100).toFixed(1) + '%',
+      // Price deviation is based on all-inclusive cost
+      difference: i === 0 ? '0.0%' : (((v.inclusive_cost - rankingArray[0].inclusive_cost) / rankingArray[0].inclusive_cost) * 100).toFixed(1) + '%',
       preferred: v.preferred,
       final_cost: v.final_cost,
+      cgst_applicable: v.cgst_applicable || 0,
+      sgst_applicable: v.sgst_applicable || 0,
       transport_included: v.transport_included || 0,
       transport_packaging: v.transport_packaging || 0,
       transport_freight: v.transport_freight || 0,
@@ -2113,15 +2208,15 @@ app.get('/api/rfqs/:id/comparative', (req, res) => {
       payment_terms: v.payment_terms || ''
     }));
 
-    // Winner metrics
+    // Winner metrics use all-inclusive cost
     let winningVendor = '', winningValue = 0, savingsAchieved = 0, pctAdvantage = 0;
     if (rankings.length > 0) {
       winningVendor = rankings[0].vendor;
-      winningValue  = rankings[0].total_rate;
+      winningValue  = rankings[0].inclusive_cost;
       if (rankings.length > 1) {
-        const avgTot = rankings.reduce((s, r) => s + r.total_rate, 0) / rankings.length;
+        const avgTot = rankings.reduce((s, r) => s + r.inclusive_cost, 0) / rankings.length;
         savingsAchieved = Math.max(0, avgTot - winningValue);
-        pctAdvantage    = ((avgTot - winningValue) / avgTot) * 100;
+        pctAdvantage    = avgTot > 0 ? ((avgTot - winningValue) / avgTot) * 100 : 0;
       }
     }
 
@@ -2196,7 +2291,7 @@ app.get('/api/submissions', (_req, res) => {
              r.rfq_number, r.project_name, i.description, i.moc, i.make, i.size, i.quantity, i.unit, 
              v.name as vendor_name, d.final_cost, d.cgst_applicable, d.sgst_applicable, d.submitted_at,
              d.transport_included, d.transport_packaging, d.transport_freight, d.transport_loading, d.transport_other,
-             d.payment_terms
+             d.payment_terms, d.sent_at
       FROM vendor_quotes q
       JOIN rfqs r ON q.rfq_id = r.id
       JOIN rfq_items i ON q.item_id = i.id
@@ -3218,24 +3313,27 @@ app.post('/api/rfqs/:id/finalise', async (req, res) => {
           vendor_name: d.vendor_name,
           vendor_email: d.vendor_email,
           contact_person: d.contact_person || d.vendor_name,
-          total_value
+          total_value,
+          final_cost: d.final_cost || total_value
         });
       }
     });
 
-    vendorTotals.sort((a, b) => a.total_value - b.total_value);
+    vendorTotals.sort((a, b) => a.final_cost - b.final_cost);
 
     let l1VendorId = null;
     let l1VendorName = '';
     let l1VendorEmail = '';
     let l1VendorContact = '';
     let l1TotalValue = 0;
+    let l1FinalCost = 0;
     if (vendorTotals.length > 0) {
       l1VendorId = vendorTotals[0].vendor_id;
       l1VendorName = vendorTotals[0].vendor_name;
       l1VendorEmail = vendorTotals[0].vendor_email;
       l1VendorContact = vendorTotals[0].contact_person || vendorTotals[0].vendor_name;
       l1TotalValue = vendorTotals[0].total_value;
+      l1FinalCost = vendorTotals[0].final_cost || 0;
     }
 
     const notifiedVendors = [];

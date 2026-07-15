@@ -6,32 +6,17 @@
             const savedTheme = localStorage.getItem('theme') || 'light';
             document.documentElement.setAttribute('data-theme', savedTheme);
 
-            // Bypasses the flash of auth overlay for passwordless token accesses or active sessions
-            const urlParams = new URLSearchParams(window.location.search);
-            const hasToken = urlParams.has('token') || urlParams.has('transport_token');
-            const hasSession = localStorage.getItem('semco_session_token') && localStorage.getItem('semco_session_user');
-            const isRegister = urlParams.get('register') === 'true';
-
-            if ((hasToken || hasSession) && !isRegister) {
-                const style = document.createElement('style');
-                style.id = 'temp-hide-auth';
-                style.innerHTML = `
-                    #auth-overlay { display: none !important; }
-                    #vendor-portal-placeholder-card { display: none !important; }
-                    #vendor-portal-simulation-warning-card { display: none !important; }
-                    #vendor-portal-loading-card { display: block !important; }
-                `;
-                document.head.appendChild(style);
-            } else {
-                const style = document.createElement('style');
-                style.id = 'temp-hide-loader';
-                style.innerHTML = '#portal-loader { display: none !important; }';
-                document.head.appendChild(style);
-            }
+            // Always hide the auth overlay on first paint — the JS session
+            // check will show it only if there is no valid session.
+            // This eliminates the flash of the sign-in form on every page load.
+            const style = document.createElement('style');
+            style.id = 'temp-hide-auth';
+            style.innerHTML = '#auth-overlay { display: none !important; }';
+            document.head.appendChild(style);
         })();
     </script>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=1.0">
     <title>SEMCO Smart RFQ AI Agent - Enterprise Procurement Platform</title>
     
     <!-- External CSS & Libraries via CDN -->
@@ -229,25 +214,26 @@
             transition: background-color var(--transition-speed), color var(--transition-speed);
         }
 
-        /* Sidebar Navigation styling */
+        /* Sidebar Navigation styling - Mobile-first (hidden off-screen by default) */
         #sidebar {
             width: 260px;
             background-color: var(--sidebar-bg);
             color: var(--sidebar-text);
             min-height: 100vh;
             position: fixed;
-            left: 0;
+            left: -260px;
             top: 0;
             z-index: 1000;
             transition: all var(--transition-speed) ease;
-            box-shadow: 4px 0 10px rgba(0,0,0,0.05);
+            box-shadow: none;
             display: flex;
             flex-direction: column;
             border-right: 1px solid var(--border-color);
         }
 
-        #sidebar.collapsed {
-            left: -260px;
+        #sidebar:not(.collapsed) {
+            left: 0;
+            box-shadow: 6px 0 25px rgba(0,0,0,0.15);
         }
 
         .sidebar-brand {
@@ -418,22 +404,17 @@
             box-shadow: 0 6px 16px rgba(232, 109, 124, 0.3) !important;
         }
 
-        /* Content Wrapper Grid */
+        /* Content Wrapper Grid - Mobile-first (full-width by default) */
         #content-wrapper {
             flex-grow: 1;
-            margin-left: 260px;
+            margin-left: 0;
             transition: all var(--transition-speed) ease;
             display: flex;
             flex-direction: column;
             min-height: 100vh;
             min-width: 0;
-            width: calc(100% - 260px);
-            max-width: 100%;
-        }
-
-        #content-wrapper.expanded {
-            margin-left: 0;
             width: 100%;
+            max-width: 100%;
         }
 
         /* Header CSS */
@@ -690,60 +671,6 @@
             background: linear-gradient(135deg, rgba(16, 185, 129, 0.02), rgba(16, 185, 129, 0.08));
         }
 
-        /* Chat UI styling for AI Copilot */
-        .chat-container {
-            height: 420px;
-            overflow-y: auto;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            background-color: var(--bg-primary);
-            padding: 1rem;
-        }
-
-        .chat-message {
-            margin-bottom: 1rem;
-            display: flex;
-            flex-direction: column;
-            max-width: 80%;
-        }
-
-        .chat-message.user {
-            margin-left: auto;
-            align-items: flex-end;
-        }
-
-        .chat-message.bot {
-            margin-right: auto;
-            align-items: flex-start;
-        }
-
-        .chat-bubble {
-            padding: 0.75rem 1rem;
-            border-radius: 12px;
-            font-size: 0.85rem;
-            line-height: 1.5;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        }
-
-        .chat-message.user .chat-bubble {
-            background-color: var(--accent-blue);
-            color: #ffffff;
-            border-bottom-right-radius: 2px;
-        }
-
-        .chat-message.bot .chat-bubble {
-            background-color: var(--bg-secondary);
-            color: var(--text-primary);
-            border: 1px solid var(--border-color);
-            border-bottom-left-radius: 2px;
-        }
-
-        .chat-meta {
-            font-size: 0.65rem;
-            color: var(--text-secondary);
-            margin-top: 0.25rem;
-        }
-
         /* Notification Dropdown layout */
         .notification-dropdown {
             width: 320px;
@@ -911,7 +838,7 @@
             height: 100vh;
             background: radial-gradient(circle at 10% 20%, #fdfbf7 0%, #e8f0fe 100%);
             z-index: 9999;
-            display: flex;
+            display: none;
             align-items: center;
             justify-content: center;
             overflow-y: auto;
@@ -1302,25 +1229,61 @@
             color: var(--accent-orange) !important;
         }
 
-        /* Mobile & Tablet Responsiveness */
+        /* Mobile-first Touch Target Sizing (minimum 48x48px target compliance) */
+        input:not([type="checkbox"]):not([type="radio"]), 
+        select, 
+        .form-control, 
+        .form-select, 
+        .btn, 
+        .sidebar-nav-item a, 
+        .nav-link, 
+        .pagination .page-link,
+        .input-group-text {
+            min-height: 48px !important;
+            min-width: 48px;
+            display: inline-flex !important;
+            align-items: center !important;
+        }
+        
+        .btn {
+            justify-content: center !important;
+        }
+
+        .btn-xs, .btn-sm {
+            padding: 0.35rem 0.75rem !important;
+            font-size: 0.75rem !important;
+        }
+
+        .form-check-input {
+            width: 1.5rem !important;
+            height: 1.5rem !important;
+            cursor: pointer;
+        }
+        .form-check-label {
+            padding-left: 0.5rem;
+            min-height: 48px;
+            display: inline-flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        /* Responsive Containerized Horizontal Table Scrollbar Settings */
+        .table-responsive {
+            display: block;
+            width: 100%;
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        .table-responsive table {
+            width: 100%;
+            margin-bottom: 0;
+        }
+
+        /* Mobile-First Layout Media Overrides */
         @media (max-width: 768px) {
-            #sidebar {
-                left: -260px;
-                box-shadow: none;
-            }
-            #sidebar:not(.collapsed) {
-                left: 0;
-                box-shadow: 6px 0 25px rgba(0,0,0,0.15);
-            }
-            #content-wrapper {
-                margin-left: 0 !important;
-                width: 100% !important;
-                max-width: 100% !important;
-            }
-            #content-wrapper.expanded {
-                margin-left: 0 !important;
-                width: 100% !important;
-            }
             header {
                 padding: 0.75rem 1rem !important;
             }
@@ -1335,14 +1298,32 @@
                 background: rgba(15, 23, 42, 0.4);
                 backdrop-filter: blur(2px);
                 z-index: 995;
-                pointer-events: none;
+                pointer-events: auto;
+            }
+        }
+
+        @media (min-width: 768px) {
+            #sidebar {
+                left: 0 !important;
+                box-shadow: 4px 0 10px rgba(0,0,0,0.05);
+            }
+            #sidebar.collapsed {
+                left: -260px !important;
+            }
+            #content-wrapper {
+                margin-left: 260px !important;
+                width: calc(100% - 260px) !important;
+            }
+            #content-wrapper.expanded {
+                margin-left: 0 !important;
+                width: 100% !important;
+            }
+            body:has(#sidebar:not(.collapsed))::after {
+                display: none !important;
             }
         }
 
         @media (max-width: 767.98px) {
-            .table-responsive {
-                border-radius: 8px;
-            }
             .table th, .table td {
                 white-space: nowrap;
                 padding: 0.6rem 0.8rem !important;
@@ -1369,8 +1350,22 @@
                 width: 90vw !important;
                 max-width: 320px !important;
             }
+            /* Responsive Modals */
             .modal-dialog {
                 margin: 0.5rem !important;
+                max-width: calc(100% - 1rem) !important;
+            }
+            .modal-content {
+                border-radius: 12px !important;
+            }
+            .modal-footer {
+                flex-wrap: nowrap !important;
+                gap: 0.5rem;
+            }
+            .modal-footer .btn {
+                flex: 1 1 0% !important;
+                width: 100% !important;
+                margin: 0 !important;
             }
         }
 
@@ -1581,9 +1576,7 @@
             <li class="sidebar-nav-item" data-target="panel-transporters">
                 <a href="#"><i class="fa-solid fa-truck"></i> Transporter Master</a>
             </li>
-            <li class="sidebar-nav-item" data-target="panel-copilot">
-                <a href="#"><i class="fa-solid fa-robot"></i> AI Copilot</a>
-            </li>
+
             <li class="sidebar-nav-item" data-target="panel-audit">
                 <a href="#"><i class="fa-solid fa-shield-halved"></i> Audit Trail</a>
             </li>
@@ -2232,8 +2225,8 @@
                                     <tr>
                                         <th>Rank</th>
                                         <th>Bidder Name</th>
-                                        <th>Calculated Quote (Item Total)</th>
-                                        <th>Final Quoted Cost (Lump Sum)</th>
+                                        <th>All-Inclusive Cost <small class="text-muted fw-normal">(GST + Tax + Transport)</small></th>
+                                        <th>Base Item Total <small class="text-muted fw-normal">(ex-tax)</small></th>
                                         <th>Avg Lead Time (Days)</th>
                                         <th>Price Deviation (vs L1)</th>
                                     </tr>
@@ -2247,35 +2240,7 @@
                 </div>
             </section>
 
-            <!-- PANEL 6: AI PROCUREMENT COPILOT -->
-            <section id="panel-copilot" class="tab-panel">
-                <div class="dashboard-card max-w-4xl mx-auto">
-                    <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-3">
-                        <div class="d-flex align-items-center gap-2">
-                            <div class="bg-primary p-2 rounded-circle"><i class="fa-solid fa-robot text-primary"></i></div>
-                            <div>
-                                <h6 class="fw-bold m-0">SEMCO AI Procurement Copilot</h6>
-                                <span class="fs-8 text-secondary">Embedded Procurement Intelligence Agent</span>
-                            </div>
-                        </div>
-                        <span class="status-badge badge-submitted fs-9"><i class="fa-solid fa-bolt me-1"></i> NLP Engine Active</span>
-                    </div>
 
-                    <div class="chat-container mb-3" id="copilot-chat-container">
-                        <div class="chat-message bot">
-                            <div class="chat-bubble">
-                                Hello! I am your AI Procurement Copilot. Ask me questions about quotations, L1 vendors, price trends, response times, or negotiation suggestions.
-                            </div>
-                            <div class="chat-meta">Copilot • Just now</div>
-                        </div>
-                    </div>
-
-                    <form id="copilot-query-form" class="d-flex gap-2">
-                        <input type="text" class="form-control" id="copilot-query-input" placeholder="Type query, e.g., 'Who responded fastest?' or 'Show vendors 10% below average'..." required>
-                        <button type="submit" class="btn btn-primary" id="copilot-send-btn"><i class="fa-solid fa-paper-plane me-1"></i> Send</button>
-                    </form>
-                </div>
-            </section>
 
             <!-- PANEL: PARTNER ONBOARDING REGISTRATION FORM -->
             <section id="panel-onboarding-registration" class="tab-panel">
@@ -2886,6 +2851,8 @@
                         <div class="col-12 col-md-6">
                             <label class="fs-9 fw-bold text-secondary uppercase mb-1 d-block">Sort Submissions</label>
                             <select class="form-select form-select-sm" id="sub-sort-options" onchange="filterAllSubmissions()">
+                                <option value="sent-desc">Date Sent (Newest first)</option>
+                                <option value="sent-asc">Date Sent (Oldest first)</option>
                                 <option value="vendor-asc">Vendor Name (A-Z)</option>
                                 <option value="vendor-desc">Vendor Name (Z-A)</option>
                                 <option value="value-asc">Total Value (Lowest to Highest)</option>
@@ -2902,7 +2869,6 @@
                                 <tr>
                                     <th>RFQ Number</th>
                                     <th>Project Name</th>
-                                    <th>Vendor Partner</th>
                                     <th>MOC</th>
                                     <th>Item Description</th>
                                     <th>Make</th>
@@ -3193,6 +3159,8 @@
                                 <div class="col-12 col-md-6">
                                     <label class="fs-9 fw-bold text-secondary uppercase mb-1 d-block">Sort Submissions</label>
                                     <select class="form-select form-select-sm" id="t-quotes-sort-options" onchange="filterTransportSubmissions()">
+                                        <option value="sent-desc">Date Sent (Newest first)</option>
+                                        <option value="sent-asc">Date Sent (Oldest first)</option>
                                         <option value="transporter-asc">Transporter Name (A-Z)</option>
                                         <option value="transporter-desc">Transporter Name (Z-A)</option>
                                         <option value="value-asc">Total Value (Lowest to Highest)</option>
@@ -3206,7 +3174,6 @@
                                     <thead class="table-dark sticky-top">
                                         <tr>
                                             <th>REQUEST NUMBER</th>
-                                            <th>TRANSPORTER PARTNER</th>
                                             <th>ROUTE (FROM &rarr; TO)</th>
                                             <th>VEHICLE SIZE</th>
                                             <th>TONNAGE</th>
@@ -4101,7 +4068,9 @@
     <!-- CORE LOGIC: PERSISTENCE, API CONTEXT, ROUTING & CHART CREATION -->
     <script>
         // API Base URL
-        const API_URL = 'https://rfq-backend.vercel.app/api';
+        const API_URL = (window.location.protocol.startsWith('file') || !window.location.host)
+            ? 'http://localhost:5000/api'
+            : `${window.location.protocol}//${window.location.host}/api`;
         let serverMode = false;
         let currentUser = "Vijay Mehta";
         let currentRole = "Procurement Admin";
@@ -5842,9 +5811,7 @@
                     <li class="sidebar-nav-item" data-target="panel-master-list">
                         <a href="#"><i class="fa-solid fa-rectangle-list"></i> Master List</a>
                     </li>
-                    <li class="sidebar-nav-item" data-target="panel-copilot">
-                        <a href="#"><i class="fa-solid fa-robot"></i> AI Copilot</a>
-                    </li>
+
                     <li class="sidebar-nav-item" data-target="panel-audit">
                         <a href="#"><i class="fa-solid fa-shield-halved"></i> Audit Trail</a>
                     </li>
@@ -6644,6 +6611,7 @@
                                 transport_loading: dist.transport_loading || 0,
                                 transport_other: dist.transport_other || 0,
                                 submitted_at: dist.submitted_at || '',
+                                sent_at: dist.sent_at || '',
                                 payment_terms: dist.payment_terms || ''
                             });
                         }
@@ -6702,7 +6670,11 @@
 
             // Sort data
             filtered.sort((a, b) => {
-                if (sortVal === 'vendor-asc') {
+                if (sortVal === 'sent-desc') {
+                    return new Date(b.sent_at || 0) - new Date(a.sent_at || 0);
+                } else if (sortVal === 'sent-asc') {
+                    return new Date(a.sent_at || 0) - new Date(b.sent_at || 0);
+                } else if (sortVal === 'vendor-asc') {
                     return (a.vendor_name || '').localeCompare(b.vendor_name || '');
                 } else if (sortVal === 'vendor-desc') {
                     return (b.vendor_name || '').localeCompare(a.vendor_name || '');
@@ -6725,7 +6697,7 @@
             let totalValue = 0;
 
             if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="12" class="text-muted py-4">No matching quotations found.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="15" class="text-muted py-4">No matching quotations found.</td></tr>`;
             } else {
                 filtered.forEach(item => {
                     const qty = parseFloat(item.quantity) || 0;
@@ -6760,7 +6732,6 @@
                     tr.innerHTML = `
                         <td class="text-primary fw-bold">${item.rfq_number}</td>
                         <td class="fw-semibold text-dark text-start">${item.project_name}</td>
-                        <td class="fw-bold text-secondary-emphasis"><a href="#" onclick="viewVendorQuotations('${item.vendor_id}', '${item.vendor_name.replace(/'/g, "\\'")}'); return false;">${item.vendor_name}</a></td>
                         <td class="fw-bold">${item.moc}</td>
                         <td class="text-start">${item.description}</td>
                         <td>${item.make || '-'}</td>
@@ -8006,7 +7977,7 @@
                 const json = await res.json();
                 if (!json.success) return alert(json.message);
             } else {
-                const vendors = JSON.parse(localStorage.getItem('semco_vendors'));
+                const vendors = JSON.parse(localStorage.getItem('semco_vendors')) || [];
                 const id = 'VND' + String(Date.now()).slice(-3);
                 vendors.push({ id, ...body });
                 localStorage.setItem('semco_vendors', JSON.stringify(vendors));
@@ -8017,6 +7988,7 @@
             bootstrap.Modal.getInstance(document.getElementById('addVendorModal')).hide();
             document.getElementById('add-vendor-form').reset();
             refreshVendorsTable();
+            if (typeof refreshMasterListTab === 'function') refreshMasterListTab('vendor');
         });
 
         // Edit Vendor script handlers
@@ -10853,22 +10825,32 @@
                 const sortedRanks = Object.values(vendorTotals)
                     .map(v => {
                         if (v.item_count > 0) v.avg_lead_time = Math.round(v.avg_lead_time / v.item_count);
+                        v.inclusive_cost = v.final_cost > 0 ? v.final_cost : v.total_value;
                         return v;
                     })
-                    .filter(v => v.total_value > 0)
-                    .sort((a,b) => a.total_value - b.total_value);
+                    .filter(v => v.total_value > 0 || v.final_cost > 0)
+                    .sort((a,b) => a.inclusive_cost - b.inclusive_cost);
 
                 const rankings = sortedRanks.map((v, idx) => {
-                    const diff = idx === 0 ? 0 : (((v.total_value - sortedRanks[0].total_value) / sortedRanks[0].total_value) * 100);
+                    const diff = idx === 0 ? 0 : (((v.inclusive_cost - sortedRanks[0].inclusive_cost) / sortedRanks[0].inclusive_cost) * 100);
+                    const dist = rfqDetails.distributions.find(d => d.vendor_id === v.vendor_id) || {};
                     return {
                         rank: idx + 1,
                         vendor_id: v.vendor_id,
                         vendor: v.vendor_name,
                         total_rate: v.total_value,
+                        inclusive_cost: v.inclusive_cost,
                         lead_time: v.avg_lead_time,
                         difference: diff.toFixed(1) + '%',
                         preferred: v.preferred,
                         final_cost: v.final_cost,
+                        cgst_applicable: dist.cgst_applicable || 0,
+                        sgst_applicable: dist.sgst_applicable || 0,
+                        transport_included: dist.transport_included || 0,
+                        transport_packaging: dist.transport_packaging || 0,
+                        transport_freight: dist.transport_freight || 0,
+                        transport_loading: dist.transport_loading || 0,
+                        transport_other: dist.transport_other || 0,
                         payment_terms: v.payment_terms || ''
                     };
                 });
@@ -10880,11 +10862,11 @@
 
                 if (rankings.length > 0) {
                     winningVendor = rankings[0].vendor;
-                    winningValue = rankings[0].total_rate;
+                    winningValue = rankings[0].inclusive_cost;
                     if (rankings.length > 1) {
-                        const avgQuote = rankings.reduce((s, r)=>s + r.total_rate, 0) / rankings.length;
+                        const avgQuote = rankings.reduce((s, r)=>s + r.inclusive_cost, 0) / rankings.length;
                         savings = Math.max(0, avgQuote - winningValue);
-                        advantage = ((avgQuote - winningValue) / avgQuote) * 100;
+                        advantage = avgQuote > 0 ? (((avgQuote - winningValue) / avgQuote) * 100) : 0;
                     }
                 }
 
@@ -11245,36 +11227,55 @@
 
             pooledData.rankings.forEach(r => {
                 const tr = document.createElement('tr');
-                const finalCostText = (r.final_cost && r.final_cost > 0) ? `₹${r.final_cost.toFixed(2)}` : '<span class="text-muted">N/A</span>';
-                
+
+                // All-inclusive cost (used for ranking)
+                const inclusiveCost = r.inclusive_cost > 0 ? r.inclusive_cost : (r.final_cost > 0 ? r.final_cost : r.total_rate);
+                const inclusiveCostText = `<span class="fw-bold ${r.rank === 1 ? 'text-success' : 'text-primary'}">₹${inclusiveCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`;
+
+                // Base item total (ex-tax)
+                const baseTotal = r.total_rate > 0 ? `₹${r.total_rate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '<span class="text-muted">—</span>';
+
+                // GST / Tax badge
+                const taxParts = [];
+                if (r.cgst_applicable) taxParts.push('CGST');
+                if (r.sgst_applicable) taxParts.push('SGST');
+                const taxBadge = taxParts.length > 0
+                    ? `<span class="badge bg-primary-subtle text-primary fs-9 d-block mt-1"><i class="fa-solid fa-percent me-1"></i>Taxes: ${taxParts.join(' + ')} Applicable</span>`
+                    : `<span class="badge bg-secondary-subtle text-secondary fs-9 d-block mt-1">Taxes: Not Applicable</span>`;
+
+                // Transport badge
                 const transportTotal = (r.transport_packaging || 0) + (r.transport_freight || 0) + (r.transport_loading || 0) + (r.transport_other || 0);
                 const transportText = r.transport_included === 1
-                    ? `<span class="badge bg-success-subtle text-success fs-9 d-block mt-1">Transport: Included (Breakup: P&F ₹${r.transport_packaging || 0}, Frt ₹${r.transport_freight || 0}, Load ₹${r.transport_loading || 0}, Oth ₹${r.transport_other || 0})</span>`
-                    : `<span class="badge bg-warning-subtle text-warning fs-9 d-block mt-1">Transport: Excluded (+₹${transportTotal.toFixed(2)}) (Breakup: P&F ₹${r.transport_packaging || 0}, Frt ₹${r.transport_freight || 0}, Load ₹${r.transport_loading || 0}, Oth ₹${r.transport_other || 0})</span>`;
+                    ? `<span class="badge bg-success-subtle text-success fs-9 d-block mt-1"><i class="fa-solid fa-truck me-1"></i>Transport: Included (P&F ₹${r.transport_packaging || 0}, Frt ₹${r.transport_freight || 0}, Load ₹${r.transport_loading || 0}, Oth ₹${r.transport_other || 0})</span>`
+                    : transportTotal > 0
+                        ? `<span class="badge bg-warning-subtle text-warning fs-9 d-block mt-1"><i class="fa-solid fa-truck me-1"></i>Transport: Excluded (+₹${transportTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })})</span>`
+                        : `<span class="badge bg-secondary-subtle text-secondary fs-9 d-block mt-1"><i class="fa-solid fa-truck me-1"></i>Transport: Not Specified</span>`;
 
                 const paymentTermsText = r.payment_terms
-                    ? `<span class="badge bg-info-subtle text-info fs-9 d-block mt-1" style="white-space: normal; text-align: left;"><i class="fa-solid fa-credit-card me-1"></i>Payment Terms: ${r.payment_terms}</span>`
+                    ? `<span class="badge bg-info-subtle text-info fs-9 d-block mt-1" style="white-space:normal;text-align:left;"><i class="fa-solid fa-credit-card me-1"></i>Payment: ${r.payment_terms}</span>`
                     : '';
 
                 tr.innerHTML = `
                     <td><span class="badge ${r.rank === 1 ? 'bg-success' : 'bg-secondary'} px-2 py-1">${r.rank === 1 ? 'L1 Winner' : 'L' + r.rank}</span></td>
-                    <td class="fw-bold">
+                    <td class="fw-bold text-start">
                         ${r.vendor} ${r.quoted_all ? '' : '<span class="text-muted fs-9 fw-normal">(Partial)</span>'}
+                        ${taxBadge}
                         ${transportText}
                         ${paymentTermsText}
                     </td>
-                    <td class="text-primary fw-bold">₹${r.total_rate.toFixed(2)}</td>
-                    <td class="text-info fw-bold">${finalCostText}</td>
+                    <td class="text-center">${inclusiveCostText}</td>
+                    <td class="text-center text-muted">${baseTotal}</td>
                     <td>${r.lead_time} Days</td>
-                    <td class="text-danger fw-semibold">${r.difference}</td>
+                    <td class="${r.rank === 1 ? 'text-success' : 'text-danger'} fw-semibold">${r.difference}</td>
                 `;
                 rankTbody.appendChild(tr);
             });
 
             // Update Winner Card
             if (pooledData.rankings.length > 0) {
+                // winner.value is now all-inclusive cost
                 document.getElementById('winner-vendor-name').textContent = pooledData.winner.vendor;
-                document.getElementById('winner-quote-value').textContent = '₹' + parseFloat(pooledData.winner.value).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+                document.getElementById('winner-quote-value').textContent = '₹' + parseFloat(pooledData.winner.value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 document.getElementById('winner-savings-value').textContent = '₹' + parseFloat(pooledData.winner.savings).toLocaleString('en-IN', { maximumFractionDigits: 2 });
                 document.getElementById('winner-advantage-pct').textContent = pooledData.winner.advantage;
                 winnerRow.classList.remove('d-none');
@@ -11320,7 +11321,8 @@
             const accentOrange = style.getPropertyValue('--accent-orange').trim() || '#f58d51';
 
             const labels = pooledData.rankings.map(r => r.vendor);
-            const dataValues = pooledData.rankings.map(r => r.total_rate);
+            // Chart uses all-inclusive cost for visual comparison
+            const dataValues = pooledData.rankings.map(r => r.inclusive_cost > 0 ? r.inclusive_cost : r.total_rate);
 
             const bgColors = pooledData.rankings.map((r, idx) => {
                 if (idx === 0) return accentGreen;
@@ -11348,7 +11350,7 @@
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    return 'Total Quote: ₹' + context.raw.toLocaleString('en-IN');
+                                    return 'All-Inclusive Cost: ₹' + context.raw.toLocaleString('en-IN');
                                 }
                             }
                         }
@@ -11389,13 +11391,15 @@
             const l1 = rankings[0];
             const l2 = rankings[1] || null;
 
-            // 1. Commercial Analysis
-            let comm = `<b>L1 Bidder</b> is <b>${l1.vendor}</b> with a combined quote of <b>₹${l1.total_rate.toLocaleString('en-IN')}</b> across the selected items. `;
+            // 1. Commercial Analysis  (all-inclusive costs)
+            const l1IncCost = l1.inclusive_cost > 0 ? l1.inclusive_cost : l1.total_rate;
+            let comm = `<b>L1 Bidder</b> is <b>${l1.vendor}</b> with an <b>all-inclusive cost of ₹${l1IncCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b> (inclusive of GST, taxes and transport charges). `;
             if (l2) {
+                const l2IncCost = l2.inclusive_cost > 0 ? l2.inclusive_cost : l2.total_rate;
                 const savingsVal = parseFloat(pooledData.winner.savings);
                 const savingsPct = parseFloat(pooledData.winner.advantage);
-                comm += `This quote is <b>₹${savingsVal.toLocaleString('en-IN')} (${savingsPct}%)</b> lower than the average quote. `;
-                comm += `Comparing to the L2 runner-up (<b>${l2.vendor}</b> at ₹${l2.total_rate.toLocaleString('en-IN')}), awarding to L1 yields a direct cost reduction of <b>₹${(l2.total_rate - l1.total_rate).toLocaleString('en-IN')}</b>.`;
+                comm += `This all-inclusive quote is <b>₹${savingsVal.toLocaleString('en-IN')} (${savingsPct}%)</b> lower than the average all-inclusive quote. `;
+                comm += `Comparing to the L2 runner-up (<b>${l2.vendor}</b> at ₹${l2IncCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}), awarding to L1 yields a direct cost reduction of <b>₹${(l2IncCost - l1IncCost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>.`;
             } else {
                 comm += `Currently, there are no competitor bids to calculate savings comparisons. Encourage other vendors to submit rates.`;
             }
@@ -11478,104 +11482,7 @@
             document.body.removeChild(link);
         }
 
-        async function triggerAICopilotAnalysis() {
-            const selectEl = document.getElementById('comparative-rfq-select');
-            const selectedVal = selectEl ? selectEl.value : "";
-            const rfqIds = selectedVal ? [selectedVal] : [];
-            if (rfqIds.length === 0) {
-                alert("Please select an RFQ to generate AI recommendations.");
-                return;
-            }
 
-            // Aggregate reports
-            let report = "=== AI PROCURE INTELLIGENCE MULTI-RFQ REPORT ===\n\n";
-            for (const rfqId of rfqIds) {
-                const details = await getRFQDetails(rfqId);
-                const comp = await getRFQComparativeData(rfqId);
-                if (comp && comp.rankings && comp.rankings.length > 0) {
-                    report += `RFQ: ${details.rfq.rfq_number} (${details.rfq.project_name})\n`;
-                    report += `  L1 Vendor: ${comp.winner.vendor} (Quote: ₹${parseFloat(comp.winner.value).toLocaleString('en-IN')})\n`;
-                    report += `  Estimated Savings: ₹${parseFloat(comp.winner.savings).toLocaleString('en-IN')} (${comp.winner.advantage} vs average)\n`;
-                    report += `  Lead Time: ${comp.rankings[0].lead_time} days\n\n`;
-                }
-            }
-
-            alert(report + "Action: Recommendations loaded in the AI Procurement Intelligence Recommendations panel below.");
-            addAuditLog(currentUser, 'AI_RECOMMENDATION_GENERATE', `AI Commercial analysis report generated for selected RFQs: ${rfqIds.join(', ')}`);
-        }
-
-        // ========== AI COPILOT CHAT (MODULE 15) ==========
-        document.getElementById('copilot-query-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const input = document.getElementById('copilot-query-input');
-            const query = input.value.trim();
-            if (!query) return;
-
-            const container = document.getElementById('copilot-chat-container');
-            
-            // Append User message
-            const userMsg = document.createElement('div');
-            userMsg.className = 'chat-message user';
-            userMsg.innerHTML = `
-                <div class="chat-bubble">${query}</div>
-                <div class="chat-meta">You • Just now</div>
-            `;
-            container.appendChild(userMsg);
-            container.scrollTop = container.scrollHeight;
-            input.value = '';
-
-            // Loading bubble
-            const loadingMsg = document.createElement('div');
-            loadingMsg.className = 'chat-message bot';
-            loadingMsg.innerHTML = `
-                <div class="chat-bubble text-muted"><i class="fa-solid fa-spinner fa-spin me-1"></i> Thinking...</div>
-            `;
-            container.appendChild(loadingMsg);
-            container.scrollTop = container.scrollHeight;
-
-            let reply = "";
-
-            try {
-                if (serverMode) {
-                    const res = await fetch(`${API_URL}/copilot/query`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ query })
-                    });
-                    const json = await res.json();
-                    reply = json.reply;
-                } else {
-                    // Offline Simulated NLP logic
-                    const normalized = query.toLowerCase();
-                    if (normalized.includes('fastest') || normalized.includes('lead time')) {
-                        reply = "According to current submissions, **Sandvik Coromant India** responded fastest, offering an average lead time of **7 days**.";
-                    } else if (normalized.includes('below average') || normalized.includes('10%')) {
-                        reply = "Analyzing current submitted rates against historical data:\n\n1. **Tata Steel Ltd.** SS316 Tubing is quoted at **₹810/Mtr** which is **12.5% below** the current average rate (₹925).\n2. **JSW Steel Ltd.** is also offering steel components at highly competitive margins.";
-                    } else if (normalized.includes('won most')) {
-                        reply = "Our records show **Tata Steel Ltd.** has won **45%** of all piping RFQs issued this year, followed by **Kirloskar Brothers** at **30%**.";
-                    } else {
-                        reply = `Hello! I am your AI Procurement Copilot. Ask me specific questions like:
-                                \n* "Who responded fastest to current piping RFQs?"
-                                \n* "Which vendor won most RFQs this year?"
-                                \n* "Show vendors offering rates 10% below average price"`;
-                    }
-                }
-            } catch (err) {
-                reply = `Error connecting to Copilot engine: ${err.message}`;
-            }
-
-            // Remove loading and append Bot message
-            loadingMsg.remove();
-            const botMsg = document.createElement('div');
-            botMsg.className = 'chat-message bot';
-            botMsg.innerHTML = `
-                <div class="chat-bubble">${reply.replace(/\n/g, '<br>')}</div>
-                <div class="chat-meta">Copilot • Just now</div>
-            `;
-            container.appendChild(botMsg);
-            container.scrollTop = container.scrollHeight;
-            addAuditLog('AI Copilot', 'COPILET_QUERY', `Processed natural language query: "${query}"`);
-        });
 
         // ========== CHARTS RENDER FUNCTIONS (MODULE 10) ==========
         let chartInstancePrice = null;
@@ -14945,7 +14852,11 @@
 
             // Sort data
             filtered.sort((a, b) => {
-                if (sortVal === 'transporter-asc') {
+                if (sortVal === 'sent-desc') {
+                    return new Date(b.sent_at || 0) - new Date(a.sent_at || 0);
+                } else if (sortVal === 'sent-asc') {
+                    return new Date(a.sent_at || 0) - new Date(b.sent_at || 0);
+                } else if (sortVal === 'transporter-asc') {
                     return (a.transporter_name || '').localeCompare(b.transporter_name || '');
                 } else if (sortVal === 'transporter-desc') {
                     return (b.transporter_name || '').localeCompare(a.transporter_name || '');
@@ -14967,7 +14878,7 @@
             let totalSum = 0;
 
             if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="13" class="text-center text-secondary py-3"><i class="fa-solid fa-info-circle me-1"></i> No matching submitted quotes found.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="11" class="text-center text-secondary py-3"><i class="fa-solid fa-info-circle me-1"></i> No matching submitted quotes found.</td></tr>`;
                 if (countDisplay) countDisplay.textContent = '0';
                 if (sumDisplay) sumDisplay.textContent = '₹0.00';
                 return;
@@ -14989,12 +14900,6 @@
                     <tr>
                         <td class="text-primary fw-bold">
                             <a href="#" onclick="viewComparativeForRequest('${s.request_id}'); return false;" class="text-decoration-none">${s.request_number}</a>
-                        </td>
-                        <td>
-                            <div class="fw-bold text-dark text-start">
-                                <a href="#" onclick="viewTransporterQuotations('${s.transporter_id}', '${s.transporter_name.replace(/'/g, "\\'")}'); return false;">${s.transporter_name}</a>
-                            </div>
-                            <div class="text-secondary fs-8 text-start">${s.transporter_email}</div>
                         </td>
                         <td>
                             <div class="text-start">${s.from_location} &rarr; ${s.to_location}</div>
