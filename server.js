@@ -406,6 +406,12 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname)));
 
+// Root route to explicitly serve index.html on Vercel
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+
 // Middleware to ensure database is connected before processing request on Vercel
 let mongoConnected = false;
 let mongoConnectingPromise = null;
