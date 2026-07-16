@@ -175,7 +175,7 @@ async function sendMailViaSmtp(to, subject, html, attachmentPath = null, attachm
         }
 
         const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'rfq@semcogroups.com';
-        const fromName = process.env.SENDGRID_FROM_NAME || 'SEMCO Groups';
+        const fromName = process.env.SENDGRID_FROM_NAME || 'Umesh Patil SEMCO Groups';
 
         await sgMail.send({
           to: to,
@@ -227,7 +227,7 @@ async function sendMailViaSmtp(to, subject, html, attachmentPath = null, attachm
         const fromEmail = process.env.SMTP_USER || 'umesh.p@semcogroups.com';
 
         await smtpTransporter.sendMail({
-          from: `"${process.env.SMTP_FROM_NAME || 'SEMCO Groups'}" <${fromEmail}>`,
+          from: `"${process.env.SMTP_FROM_NAME || 'Umesh Patil SEMCO Groups'}" <${fromEmail}>`,
           to: to,
           subject: subject,
           html: html,
@@ -1661,7 +1661,7 @@ app.post('/api/rfqs/distribute', async (req, res) => {
     db.prepare("UPDATE rfqs SET status = 'Sent', available_to = ? WHERE id = ?").run(expiresISO, rfq_id);
 
     const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'rfq@semcogroups.com';
-    const fromName  = process.env.SENDGRID_FROM_NAME  || 'SEMCO Procurement Automation';
+    const fromName  = process.env.SENDGRID_FROM_NAME  || 'Umesh Patil SEMCO Groups';
 
     // No testing mode redirection
     const effectiveTestEmail = '';
