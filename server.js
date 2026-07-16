@@ -1241,7 +1241,7 @@ app.post('/api/db/wipe', async (req, res) => {
     await db.wipeDatabase();
     
     // Clear uploaded files inside uploads directory
-    const uploadsDir = path.join(__dirname, 'uploads');
+    const uploadsDir = UPLOAD_DIR;
     if (fs.existsSync(uploadsDir)) {
       const files = fs.readdirSync(uploadsDir);
       for (const f of files) {
