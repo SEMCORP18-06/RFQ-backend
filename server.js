@@ -45,6 +45,16 @@ const getFrontendUrl = (req) => {
   return `http://localhost:${PORT}`;
 };
 
+const getBackendUrl = (req) => {
+  if (process.env.BACKEND_URL) return process.env.BACKEND_URL;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  if (req && req.headers && req.headers.host) {
+    const protocol = (req.secure || req.headers['x-forwarded-proto'] === 'https') ? 'https' : 'http';
+    return `${protocol}//${req.headers.host}`;
+  }
+  return `http://localhost:${PORT}`;
+};
+
 const formatDateTimeIST = (date) => {
   if (!date) return '';
   const dObj = new Date(date);
