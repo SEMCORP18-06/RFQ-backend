@@ -3654,12 +3654,7 @@ app.post('/api/rfqs/:id/extend', async (req, res) => {
       const portalUrl = `${getFrontendUrl(req)}/index.html?token=${d.token}`;
       const subject = `EXTENDED: Request For Quotation ${rfq.rfq_number} — SEMCO Groups`;
       
-      const pad = (n) => n.toString().padStart(2, '0');
-      const day = pad(newExpiry.getDate());
-      const month = pad(newExpiry.getMonth() + 1);
-      const year = newExpiry.getFullYear();
-      const timeStr = newExpiry.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-      const formattedExpiry = `${day}/${month}/${year} ${timeStr}`;
+      const formattedExpiry = formatDateTimeIST(newExpiry);
 
       const emailHtml = `
         <div style="font-family:'Inter','Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
@@ -3754,12 +3749,7 @@ app.post('/api/transport-requests/:id/extend', async (req, res) => {
       const portalUrl = `${getFrontendUrl(req)}/index.html?transport_token=${d.token}`;
       const subject = `EXTENDED: Transport Bid Request ${request.request_number} — SEMCO Groups`;
 
-      const pad = (n) => n.toString().padStart(2, '0');
-      const day = pad(newExpiry.getDate());
-      const month = pad(newExpiry.getMonth() + 1);
-      const year = newExpiry.getFullYear();
-      const timeStr = newExpiry.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-      const formattedExpiry = `${day}/${month}/${year} ${timeStr}`;
+      const formattedExpiry = formatDateTimeIST(newExpiry);
 
       const emailHtml = `
         <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
@@ -3853,12 +3843,7 @@ app.post('/api/rfqs/:id/re-open', async (req, res) => {
       const portalUrl = `${getFrontendUrl(req)}/index.html?token=${d.token}`;
       const subject = `RE-OPENED: Request For Quotation ${rfq.rfq_number} — SEMCO Groups`;
       
-      const pad = (n) => n.toString().padStart(2, '0');
-      const day = pad(newExpiry.getDate());
-      const month = pad(newExpiry.getMonth() + 1);
-      const year = newExpiry.getFullYear();
-      const timeStr = newExpiry.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-      const formattedExpiry = `${day}/${month}/${year} ${timeStr}`;
+      const formattedExpiry = formatDateTimeIST(newExpiry);
 
       const emailHtml = `
         <div style="font-family:'Inter','Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
@@ -3952,12 +3937,7 @@ app.post('/api/transport-requests/:id/re-open', async (req, res) => {
       const portalUrl = `${getFrontendUrl(req)}/index.html?transport_token=${d.token}`;
       const subject = `RE-OPENED: Transport Bid Request ${request.request_number} — SEMCO Groups`;
 
-      const pad = (n) => n.toString().padStart(2, '0');
-      const day = pad(newExpiry.getDate());
-      const month = pad(newExpiry.getMonth() + 1);
-      const year = newExpiry.getFullYear();
-      const timeStr = newExpiry.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-      const formattedExpiry = `${day}/${month}/${year} ${timeStr}`;
+      const formattedExpiry = formatDateTimeIST(newExpiry);
 
       const emailHtml = `
         <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
