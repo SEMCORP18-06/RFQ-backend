@@ -521,12 +521,18 @@ app.use((req, res, next) => {
 // Middleware to ensure database is connected before processing request on Vercel
 let mongoConnected = false;
 let mongoConnectingPromise = null;
+let lastCacheRefresh = 0;
+const CACHE_REFRESH_TTL_MS = 30 * 1000; // refresh cache at most every 30s per container
+
 app.use(async (req, res, next) => {
   if (process.env.MONGODB_URI) {
     if (!mongoConnected) {
       if (!mongoConnectingPromise) {
         mongoConnectingPromise = db.connectMongo(process.env.MONGODB_URI)
-          .then(() => { mongoConnected = true; })
+          .then(() => {
+            mongoConnected = true;
+            lastCacheRefresh = Date.now();
+          })
           .catch(err => { console.error('[MongoDB Middleware Error]:', err.message); })
           .finally(() => { mongoConnectingPromise = null; });
       }
@@ -535,10 +541,15 @@ app.use(async (req, res, next) => {
       } catch (_) {}
     } else {
       // Sync cache from MongoDB to ensure multi-container coherence on Vercel
-      try {
-        await db.refreshCache();
-      } catch (e) {
-        console.error('[MongoDB Cache Sync Error]:', e.message);
+      // Only refresh if TTL has elapsed to avoid per-request MongoDB reads
+      const now = Date.now();
+      if (now - lastCacheRefresh > CACHE_REFRESH_TTL_MS) {
+        lastCacheRefresh = now; // update immediately to prevent concurrent refreshes
+        try {
+          await db.refreshCache();
+        } catch (e) {
+          console.error('[MongoDB Cache Sync Error]:', e.message);
+        }
       }
     }
   }
@@ -1927,8 +1938,36 @@ app.get('/api/vendor-portal/verify', (req, res) => {
     }
 
     const { rfq_id, vendor_id } = decoded;
-    const rfq    = db.prepare('SELECT * FROM rfqs WHERE id = ?').get(rfq_id);
-    const vendor = db.prepare('SELECT * FROM vendors WHERE id = ?').get(vendor_id);
+    let rfq    = db.prepare('SELECT * FROM rfqs WHERE id = ?').get(rfq_id);
+    let vendor = db.prepare('SELECT * FROM vendors WHERE id = ?').get(vendor_id);
+
+    // Cold-start fallback: if the in-memory cache hasn't loaded yet, hit MongoDB directly
+    if ((!vendor || !rfq) && mongoose.connection.readyState === 1) {
+      console.log('[Verify Link] In-memory cache miss — falling back to direct MongoDB lookup...');
+      try {
+        if (!vendor) {
+          const mongoVendor = await Vendor.findOne({ id: vendor_id }).lean();
+          if (mongoVendor) {
+            vendor = mongoVendor;
+            // Also patch the cache so subsequent queries work
+            if (!db.db.data.vendors.find(v => v.id === vendor_id)) {
+              db.db.data.vendors.push(mongoVendor);
+            }
+          }
+        }
+        if (!rfq) {
+          const mongoRfq = await Rfq.findOne({ id: rfq_id }).lean();
+          if (mongoRfq) {
+            rfq = mongoRfq;
+            if (!db.db.data.rfqs.find(r => r.id === rfq_id)) {
+              db.db.data.rfqs.push(mongoRfq);
+            }
+          }
+        }
+      } catch (fallbackErr) {
+        console.error('[Verify Link] MongoDB fallback failed:', fallbackErr.message);
+      }
+    }
     if (!vendor) {
       return res.status(404).json({ 
         success: false, 
@@ -1941,7 +1980,22 @@ app.get('/api/vendor-portal/verify', (req, res) => {
     if (!rfq) return res.status(404).json({ success: false, message: 'RFQ not found.' });
 
     // Track "opened" status
-    const dist = db.prepare('SELECT * FROM rfq_distributions WHERE rfq_id = ? AND vendor_id = ?').get(rfq_id, vendor_id);
+    let dist = db.prepare('SELECT * FROM rfq_distributions WHERE rfq_id = ? AND vendor_id = ?').get(rfq_id, vendor_id);
+
+    // Cold-start fallback for distribution record
+    if (!dist && mongoose.connection.readyState === 1) {
+      try {
+        const mongoDist = await RfqDistribution.findOne({ rfq_id, vendor_id }).lean();
+        if (mongoDist) {
+          dist = mongoDist;
+          if (!db.db.data.rfq_distributions.find(d => d.rfq_id === rfq_id && d.vendor_id === vendor_id)) {
+            db.db.data.rfq_distributions.push(mongoDist);
+          }
+        }
+      } catch (distFallbackErr) {
+        console.error('[Verify Link] MongoDB dist fallback failed:', distFallbackErr.message);
+      }
+    }
 
     // If RFQ is manually closed or expired, and they have not submitted, block access
     const isExpired = rfq.available_to && new Date() > new Date(rfq.available_to);
@@ -3004,7 +3058,7 @@ app.post('/api/transport-requests/distribute', async (req, res) => {
 });
 
 // GET verify transport token
-app.get('/api/transporter-portal/verify', (req, res) => {
+app.get('/api/transporter-portal/verify', async (req, res) => {
   try {
     const { token } = req.query;
     if (!token) return res.status(400).json({ success: false, message: 'Token is required.' });
@@ -3016,7 +3070,39 @@ app.get('/api/transporter-portal/verify', (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid or expired token link.' });
     }
 
-    const dist = db.prepare('SELECT d.*, r.request_number, r.from_location, r.to_location, r.required_date, r.expires_at, r.status as request_status FROM transport_distributions d JOIN transport_requests r ON d.request_id = r.id WHERE d.token = ?').get(token);
+    let dist = db.prepare('SELECT d.*, r.request_number, r.from_location, r.to_location, r.required_date, r.expires_at, r.status as request_status FROM transport_distributions d JOIN transport_requests r ON d.request_id = r.id WHERE d.token = ?').get(token);
+
+    // Cold-start fallback: query MongoDB directly if cache is empty
+    if (!dist && mongoose.connection.readyState === 1) {
+      try {
+        console.log('[Transporter Verify] In-memory cache miss — falling back to MongoDB...');
+        const mongoDistRaw = await TransportDistribution.findOne({ token }).lean();
+        if (mongoDistRaw) {
+          const mongoReq = await TransportRequest.findOne({ id: mongoDistRaw.request_id }).lean();
+          if (mongoReq) {
+            dist = {
+              ...mongoDistRaw,
+              request_number: mongoReq.request_number,
+              from_location: mongoReq.from_location,
+              to_location: mongoReq.to_location,
+              required_date: mongoReq.required_date,
+              expires_at: mongoReq.expires_at,
+              request_status: mongoReq.status
+            };
+            // Patch the cache
+            if (!db.db.data.transport_distributions.find(d => d.token === token)) {
+              db.db.data.transport_distributions.push(mongoDistRaw);
+            }
+            if (!db.db.data.transport_requests.find(r => r.id === mongoReq.id)) {
+              db.db.data.transport_requests.push(mongoReq);
+            }
+          }
+        }
+      } catch (tFallbackErr) {
+        console.error('[Transporter Verify] MongoDB fallback failed:', tFallbackErr.message);
+      }
+    }
+
     if (!dist) {
       return res.status(404).json({ success: false, message: 'Transport request distribution not found.' });
     }
