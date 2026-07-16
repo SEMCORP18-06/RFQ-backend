@@ -1620,6 +1620,23 @@ app.get('/api/rfqs/:id/excel-preview', (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════
+//  RFQ EXPIRY SYNC (Frontend Polling)
+// ═══════════════════════════════════════════════════════════
+app.get('/api/rfqs/:id/expiry', (req, res) => {
+  try {
+    const rfq = db.prepare('SELECT available_to FROM rfqs WHERE id = ?').get(req.params.id);
+    res.json({ success: !!rfq, available_to: rfq ? rfq.available_to : null });
+  } catch(err) { res.status(500).json({ success: false }); }
+});
+
+app.get('/api/transport-requests/:id/expiry', (req, res) => {
+  try {
+    const tr = db.prepare('SELECT expires_at FROM transport_requests WHERE id = ?').get(req.params.id);
+    res.json({ success: !!tr, expires_at: tr ? tr.expires_at : null });
+  } catch(err) { res.status(500).json({ success: false }); }
+});
+
+// ═══════════════════════════════════════════════════════════
 //  DISTRIBUTION — ONE-CLICK SEND VIA SENDGRID
 // ═══════════════════════════════════════════════════════════
 
