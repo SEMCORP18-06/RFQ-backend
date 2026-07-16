@@ -55,8 +55,8 @@ const formatDateTimeIST = (date) => {
 };
 
 // ─── Directories ─────────────────────────────────────────
-const DB_DIR = path.join(__dirname, 'data');
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
+const DB_DIR = process.env.VERCEL ? '/tmp' : path.join(__dirname, 'data');
+const UPLOAD_DIR = process.env.VERCEL ? '/tmp/uploads' : path.join(__dirname, 'uploads');
 [DB_DIR, UPLOAD_DIR].forEach(d => {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 });
