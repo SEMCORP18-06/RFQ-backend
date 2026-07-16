@@ -3425,7 +3425,7 @@ app.post('/api/rfqs/:id/finalise', async (req, res) => {
       return `
         <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
           <div style="background:#0f172a;padding:25px;text-align:center;border-bottom:3px solid #22c55e;">
-            <img src="https://semcogroupsrfq.vercel.app/semco-logo-new.png" alt="SEMCO Groups" style="max-height:50px;" />
+            <img src="https://semco-groups-procurement.vercel.app/semco-logo-new.png" alt="SEMCO Groups" style="max-height:50px;" />
           </div>
           <div style="padding:30px;background:#ffffff;">
             <h2 style="color:#15803d;margin-top:0;font-size:22px;font-weight:700;">🏆 Congratulations!</h2>
@@ -3455,7 +3455,7 @@ app.post('/api/rfqs/:id/finalise', async (req, res) => {
       return `
         <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
           <div style="background:#0f172a;padding:25px;text-align:center;border-bottom:3px solid #2563eb;">
-            <img src="https://semcogroupsrfq.vercel.app/semco-logo-new.png" alt="SEMCO Groups" style="max-height:50px;" />
+            <img src="https://semco-groups-procurement.vercel.app/semco-logo-new.png" alt="SEMCO Groups" style="max-height:50px;" />
           </div>
           <div style="padding:30px;background:#ffffff;">
             <h2 style="color:#0f172a;margin-top:0;font-size:20px;font-weight:700;">📩 Quotation Update</h2>
@@ -3562,7 +3562,7 @@ app.post('/api/transport-requests/:id/finalise', async (req, res) => {
       return `
         <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
           <div style="background:#0f172a;padding:25px;text-align:center;border-bottom:3px solid #22c55e;">
-            <img src="https://semcogroupsrfq.vercel.app/semco-logo-new.png" alt="SEMCO Groups" style="max-height:50px;" />
+            <img src="https://semco-groups-procurement.vercel.app/semco-logo-new.png" alt="SEMCO Groups" style="max-height:50px;" />
           </div>
           <div style="padding:30px;background:#ffffff;">
             <h2 style="color:#15803d;margin-top:0;font-size:22px;font-weight:700;">🏆 Congratulations!</h2>
@@ -3591,7 +3591,7 @@ app.post('/api/transport-requests/:id/finalise', async (req, res) => {
       return `
         <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
           <div style="background:#0f172a;padding:25px;text-align:center;border-bottom:3px solid #0891b2;">
-            <img src="https://semcogroupsrfq.vercel.app/semco-logo-new.png" alt="SEMCO Groups" style="max-height:50px;" />
+            <img src="https://semco-groups-procurement.vercel.app/semco-logo-new.png" alt="SEMCO Groups" style="max-height:50px;" />
           </div>
           <div style="padding:30px;background:#ffffff;">
             <h2 style="color:#0f172a;margin-top:0;font-size:20px;font-weight:700;">📩 Logistics Bid Update</h2>
