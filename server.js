@@ -3102,7 +3102,35 @@ app.post('/api/transporter-portal/submit', (req, res) => {
     logAudit('Transporter Portal', 'TRANSPORT_BID_SUBMIT', `Submitted bid for request ${dist.request_number}. Cost: Rs. ${final_cost}`, req);
     
     notifyLiveRankingsForTransportRequest(dist.request_id).catch(err => console.error("Error updating transporter rankings:", err));
-    
+
+    // Send admin notification email asynchronously (mirrors vendor submit notification)
+    (async () => {
+      try {
+        const reqFull = db.prepare('SELECT request_number, from_location, to_location FROM transport_requests WHERE id = ?').get(dist.request_id);
+        const subject = `Transport Bid Submitted: ${transporter.name} — Request ${reqFull.request_number}`;
+        const html = `
+          <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
+            <div style="background:#0f172a;padding:20px;text-align:center;border-bottom:3px solid #3b82f6;">
+              <h1 style="color:#fff;margin:0;font-size:18px;">🚛 New Transport Bid Received</h1>
+            </div>
+            <div style="padding:25px;background:#fff;">
+              <h3 style="margin-top:0;">New Bid Submission Notification</h3>
+              <p><strong>Transporter:</strong> ${transporter.name}</p>
+              <p><strong>Request Number:</strong> ${reqFull.request_number}</p>
+              <p><strong>Route:</strong> ${reqFull.from_location} → ${reqFull.to_location}</p>
+              <p><strong>Total Bid Cost (Incl. GST):</strong> ₹${final_cost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p><strong>Payment Terms:</strong> ${payment_terms || '—'}</p>
+              <br/>
+              <p style="color:#64748b;font-size:13px;">This is an automated notification from the SEMCO Smart Procurement Workspace.</p>
+            </div>
+            <div style="background:#0f172a;padding:12px;text-align:center;font-size:11px;color:#fff;">&copy; ${new Date().getFullYear()} SEMCO Groups | umesh.p@semcogroups.com</div>
+          </div>`;
+        await sendMailViaSmtp('umesh.p@semcogroups.com', subject, html);
+      } catch (emailErr) {
+        console.error('[Transport Submit Admin Email Error]:', emailErr.message);
+      }
+    })().catch(err => console.error('Error in transport submit email async:', err));
+
     res.json({ success: true, message: 'Transport bid submitted successfully.' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -3238,7 +3266,8 @@ app.post('/api/transport-requests/:id/remind', async (req, res) => {
               <table style="width:100%;border-collapse:collapse;font-size:13px;">
                 <tr><td style="padding:4px 0;font-weight:600;color:#1d4ed8;width:130px;">Request Number:</td><td style="font-weight:700;">${request.request_number}</td></tr>
                 <tr><td style="padding:4px 0;font-weight:600;color:#1d4ed8;">Route:</td><td>${request.from_location} to ${request.to_location}</td></tr>
-                <tr><td style="padding:4px 0;font-weight:600;color:#1d4ed8;">Required Date:</td><td>${request.required_date}</td></tr>
+                <tr><td style="padding:4px 0;font-weight:600;color:#1d4ed8;">Required Date:</td><td>${formatDateDDMMYYYY(request.required_date)}</td></tr>
+                <tr><td style="padding:4px 0;font-weight:600;color:#1d4ed8;">Bid Closes At:</td><td style="color:#dc2626;font-weight:700;">${formatDateTimeIST(new Date(request.expires_at))}</td></tr>
               </table>
             </div>
             <div style="text-align:center;margin:30px 0;">
