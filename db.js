@@ -985,7 +985,7 @@ class PreparedStatement {
     }
 
     // ─── 5. DISTRIBUTIONS QUERIES ───
-    if (sql.includes('FROM rfq_distributions d') && sql.includes('JOIN rfqs r') && sql.includes("d.status IN ('Sent', 'Opened', 'In Progress')")) {
+    if (sql.includes('FROM rfq_distributions d') && sql.includes('JOIN rfqs r') && (sql.includes("d.status IN ('Sent', 'Opened', 'In Progress')") || sql.includes("d.status IN ('Sent', 'Opened')"))) {
       const activeDists = this.db.data.rfq_distributions.filter(d => {
         const r = this.db.data.rfqs.find(x => x.id === d.rfq_id) || {};
         return (r.status === 'Sent' || r.status === 'In Progress') && (d.status === 'Sent' || d.status === 'Opened' || d.status === 'In Progress');

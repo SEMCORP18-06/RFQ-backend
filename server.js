@@ -1945,9 +1945,11 @@ app.get('/api/vendor-portal/verify', (req, res) => {
 
     // If RFQ is manually closed or expired, and they have not submitted, block access
     const isExpired = rfq.available_to && new Date() > new Date(rfq.available_to);
+    console.log(`[Verify Link] rfq_id: ${rfq_id}, status: ${rfq.status}, available_to: ${rfq.available_to}, current_time: ${new Date().toISOString()}, isExpired: ${isExpired}`);
     if (dist && dist.status !== 'Submitted' && (rfq.status === 'Closed' || rfq.status === 'Expired' || isExpired)) {
       return res.status(403).json({
         success: false,
+        available_to: rfq.available_to || null,
         message: rfq.status === 'Closed'
           ? 'This RFQ has been closed manually by the administrator.'
           : 'This RFQ bidding window has expired. Quotes are no longer accepted.'
@@ -2081,7 +2083,7 @@ app.post('/api/vendor-portal/upload-doc', upload.array('files', 10), (req, res) 
 });
 
 // Vendor: submit or autosave rates
-app.post('/api/vendor-portal/submit', (req, res) => {
+app.post('/api/vendor-portal/submit', async (req, res) => {
   try {
     const { token, quotes, final_submit } = req.body;
     if (!token) return res.status(400).json({ success: false, message: 'Token is required.' });
@@ -2153,54 +2155,52 @@ app.post('/api/vendor-portal/submit', (req, res) => {
       
       notifyLiveRankingsForRFQ(rfq_id).catch(err => console.error("Error updating vendor rankings:", err));
 
-      // Send admin notification email asynchronously
-      (async () => {
-        try {
-          const rfqFull = db.prepare('SELECT rfq_number, project_name FROM rfqs WHERE id = ?').get(rfq_id);
-          const currentDist = db.prepare('SELECT vendor_docs, vendor_doc_path, vendor_doc_name FROM rfq_distributions WHERE rfq_id = ? AND vendor_id = ?').get(rfq_id, vendor_id);
-          const subject = `RFQ Submission: Vendor ${vendor.name} - RFQ ${rfqFull.rfq_number}`;
-          
-          let attachmentPaths = null;
-          let attachmentNames = null;
-          let docsHtml = '';
-          
-          if (currentDist && currentDist.vendor_docs) {
-            try {
-              const docs = JSON.parse(currentDist.vendor_docs);
-              if (Array.isArray(docs) && docs.length > 0) {
-                attachmentPaths = docs.map(d => d.path);
-                attachmentNames = docs.map(d => d.name);
-                docsHtml = `<p><strong>Attached Supporting Documents:</strong></p><ul>` + docs.map(d => `<li>${d.name}</li>`).join('') + `</ul>`;
-              }
-            } catch (_) {}
-          }
-          
-          if (!docsHtml && currentDist && currentDist.vendor_doc_name) {
-            attachmentPaths = currentDist.vendor_doc_path;
-            attachmentNames = currentDist.vendor_doc_name;
-            docsHtml = `<p><strong>Attached Supporting Document:</strong> ${currentDist.vendor_doc_name}</p>`;
-          }
-          
-          if (!docsHtml) {
-            docsHtml = '<p>No supporting document attached.</p>';
-          }
-
-          const html = `
-            <h3>New Bid Submission Notification</h3>
-            <p><strong>Vendor Name:</strong> ${vendor.name}</p>
-            <p><strong>RFQ Number:</strong> ${rfqFull.rfq_number}</p>
-            <p><strong>Project Name:</strong> ${rfqFull.project_name || '-'}</p>
-            <p><strong>Total Cost (Incl. Taxes/Transport):</strong> ₹${parseFloat(final_cost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            <p><strong>Payment Terms Specified:</strong> ${payment_terms || '-'}</p>
-            ${docsHtml}
-            <br/>
-            <p>This is an automated notification from the SEMCO Smart RFQ Workspace.</p>
-          `;
-          await sendMailViaSmtp('umesh.p@semcogroups.com', subject, html, attachmentPaths, attachmentNames);
-        } catch (emailErr) {
-          console.error("Failed to send admin notification email:", emailErr.message);
+      // Send admin notification email and await its completion before returning response
+      try {
+        const rfqFull = db.prepare('SELECT rfq_number, project_name FROM rfqs WHERE id = ?').get(rfq_id);
+        const currentDist = db.prepare('SELECT vendor_docs, vendor_doc_path, vendor_doc_name FROM rfq_distributions WHERE rfq_id = ? AND vendor_id = ?').get(rfq_id, vendor_id);
+        const subject = `RFQ Submission: Vendor ${vendor.name} - RFQ ${rfqFull.rfq_number}`;
+        
+        let attachmentPaths = null;
+        let attachmentNames = null;
+        let docsHtml = '';
+        
+        if (currentDist && currentDist.vendor_docs) {
+          try {
+            const docs = JSON.parse(currentDist.vendor_docs);
+            if (Array.isArray(docs) && docs.length > 0) {
+              attachmentPaths = docs;
+              attachmentNames = null;
+              docsHtml = `<p><strong>Attached Supporting Documents:</strong></p><ul>` + docs.map(d => `<li>${d.name}</li>`).join('') + `</ul>`;
+            }
+          } catch (_) {}
         }
-      })().catch(err => console.error("Error in email async function:", err));
+        
+        if (!docsHtml && currentDist && currentDist.vendor_doc_name) {
+          attachmentPaths = currentDist.vendor_doc_path;
+          attachmentNames = currentDist.vendor_doc_name;
+          docsHtml = `<p><strong>Attached Supporting Document:</strong> ${currentDist.vendor_doc_name}</p>`;
+        }
+        
+        if (!docsHtml) {
+          docsHtml = '<p>No supporting document attached.</p>';
+        }
+
+        const html = `
+          <h3>New Bid Submission Notification</h3>
+          <p><strong>Vendor Name:</strong> ${vendor.name}</p>
+          <p><strong>RFQ Number:</strong> ${rfqFull.rfq_number}</p>
+          <p><strong>Project Name:</strong> ${rfqFull.project_name || '-'}</p>
+          <p><strong>Total Cost (Incl. Taxes/Transport):</strong> ₹${parseFloat(final_cost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          <p><strong>Payment Terms Specified:</strong> ${payment_terms || '-'}</p>
+          ${docsHtml}
+          <br/>
+          <p>This is an automated notification from the SEMCO Smart RFQ Workspace.</p>
+        `;
+        await sendMailViaSmtp('umesh.p@semcogroups.com', subject, html, attachmentPaths, attachmentNames);
+      } catch (emailErr) {
+        console.error("Failed to send admin notification email:", emailErr.message);
+      }
     } else {
       db.prepare(`UPDATE rfq_distributions SET final_cost = ?, cgst_applicable = ?, sgst_applicable = ?, transport_included = ?, transport_packaging = ?, transport_freight = ?, transport_loading = ?, transport_other = ?, payment_terms = ? WHERE rfq_id = ? AND vendor_id = ?`)
         .run(
@@ -3033,7 +3033,8 @@ app.get('/api/transporter-portal/verify', (req, res) => {
         db.prepare("UPDATE transport_requests SET status = 'Expired' WHERE id = ? AND status != 'Submitted' AND status != 'Closed'").run(dist.request_id);
       }
       return res.status(403).json({ 
-        success: false, 
+        success: false,
+        available_to: dist.expires_at || null,
         message: dist.request_status === 'Closed' 
           ? 'This transport request has been closed manually by the administrator.' 
           : 'This bid request window has expired. Quotes are no longer accepted.' 
@@ -3094,7 +3095,7 @@ app.get('/api/transporter-portal/verify', (req, res) => {
 });
 
 // POST submit transport quote
-app.post('/api/transporter-portal/submit', (req, res) => {
+app.post('/api/transporter-portal/submit', async (req, res) => {
   try {
     const { token, distance, vehicle_available_from, vehicle_size, vehicle_tonnage, actual_weight_charged, rate_per_ton,
             start_location, end_location, odc_charges, weight_unit, tax_bracket, return_trip_included, return_trip_rate, payment_terms } = req.body;
@@ -3188,33 +3189,31 @@ app.post('/api/transporter-portal/submit', (req, res) => {
     
     notifyLiveRankingsForTransportRequest(dist.request_id).catch(err => console.error("Error updating transporter rankings:", err));
 
-    // Send admin notification email asynchronously (mirrors vendor submit notification)
-    (async () => {
-      try {
-        const reqFull = db.prepare('SELECT request_number, from_location, to_location FROM transport_requests WHERE id = ?').get(dist.request_id);
-        const subject = `Transport Bid Submitted: ${transporter.name} — Request ${reqFull.request_number}`;
-        const html = `
-          <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
-            <div style="background:#0f172a;padding:20px;text-align:center;border-bottom:3px solid #3b82f6;">
-              <h1 style="color:#fff;margin:0;font-size:18px;">🚛 New Transport Bid Received</h1>
-            </div>
-            <div style="padding:25px;background:#fff;">
-              <h3 style="margin-top:0;">New Bid Submission Notification</h3>
-              <p><strong>Transporter:</strong> ${transporter.name}</p>
-              <p><strong>Request Number:</strong> ${reqFull.request_number}</p>
-              <p><strong>Route:</strong> ${reqFull.from_location} → ${reqFull.to_location}</p>
-              <p><strong>Total Bid Cost (Incl. GST):</strong> ₹${final_cost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-              <p><strong>Payment Terms:</strong> ${payment_terms || '—'}</p>
-              <br/>
-              <p style="color:#64748b;font-size:13px;">This is an automated notification from the SEMCO Smart Procurement Workspace.</p>
-            </div>
-            <div style="background:#0f172a;padding:12px;text-align:center;font-size:11px;color:#fff;">&copy; ${new Date().getFullYear()} SEMCO Groups | umesh.p@semcogroups.com</div>
-          </div>`;
-        await sendMailViaSmtp('umesh.p@semcogroups.com', subject, html);
-      } catch (emailErr) {
-        console.error('[Transport Submit Admin Email Error]:', emailErr.message);
-      }
-    })().catch(err => console.error('Error in transport submit email async:', err));
+    // Send admin notification email and await its completion before returning response
+    try {
+      const reqFull = db.prepare('SELECT request_number, from_location, to_location FROM transport_requests WHERE id = ?').get(dist.request_id);
+      const subject = `Transport Bid Submitted: ${transporter.name} — Request ${reqFull.request_number}`;
+      const html = `
+        <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
+          <div style="background:#0f172a;padding:20px;text-align:center;border-bottom:3px solid #3b82f6;">
+            <h1 style="color:#fff;margin:0;font-size:18px;">🚛 New Transport Bid Received</h1>
+          </div>
+          <div style="padding:25px;background:#fff;">
+            <h3 style="margin-top:0;">New Bid Submission Notification</h3>
+            <p><strong>Transporter:</strong> ${transporter.name}</p>
+            <p><strong>Request Number:</strong> ${reqFull.request_number}</p>
+            <p><strong>Route:</strong> ${reqFull.from_location} → ${reqFull.to_location}</p>
+            <p><strong>Total Bid Cost (Incl. GST):</strong> ₹${final_cost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            <p><strong>Payment Terms:</strong> ${payment_terms || '—'}</p>
+            <br/>
+            <p style="color:#64748b;font-size:13px;">This is an automated notification from the SEMCO Smart Procurement Workspace.</p>
+          </div>
+          <div style="background:#0f172a;padding:12px;text-align:center;font-size:11px;color:#fff;">&copy; ${new Date().getFullYear()} SEMCO Groups | umesh.p@semcogroups.com</div>
+        </div>`;
+      await sendMailViaSmtp('umesh.p@semcogroups.com', subject, html);
+    } catch (emailErr) {
+      console.error('[Transport Submit Admin Email Error]:', emailErr.message);
+    }
 
     res.json({ success: true, message: 'Transport bid submitted successfully.' });
   } catch (err) {
