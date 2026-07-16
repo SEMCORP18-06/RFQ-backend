@@ -424,6 +424,46 @@ class Database {
     }
   }
 
+  async refreshCache() {
+    if (mongoose.connection.readyState === 1) {
+      try {
+        const [
+          vendors, rfqs, items, dists, quotes,
+          audits, notifications, users, transporters,
+          transportRequests, transportRequestItems, transportDistributions
+        ] = await Promise.all([
+          Vendor.find().lean(),
+          Rfq.find().lean(),
+          RfqItem.find().lean(),
+          RfqDistribution.find().lean(),
+          VendorQuote.find().lean(),
+          AuditLog.find().lean(),
+          Notification.find().lean(),
+          User.find().lean(),
+          Transporter.find().lean(),
+          TransportRequest.find().lean(),
+          TransportRequestItem.find().lean(),
+          TransportDistribution.find().lean()
+        ]);
+
+        this.data.vendors = vendors;
+        this.data.rfqs = rfqs;
+        this.data.rfq_items = items;
+        this.data.rfq_distributions = dists;
+        this.data.vendor_quotes = quotes;
+        this.data.audit_trail = audits;
+        this.data.notifications = notifications;
+        this.data.users = users;
+        this.data.transporters = transporters;
+        this.data.transport_requests = transportRequests;
+        this.data.transport_request_items = transportRequestItems;
+        this.data.transport_distributions = transportDistributions;
+      } catch (err) {
+        console.error('[MongoDB Refresh Cache Error]:', err.message);
+      }
+    }
+  }
+
 
 
 

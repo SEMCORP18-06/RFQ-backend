@@ -486,16 +486,25 @@ app.use((req, res, next) => {
 let mongoConnected = false;
 let mongoConnectingPromise = null;
 app.use(async (req, res, next) => {
-  if (process.env.MONGODB_URI && !mongoConnected) {
-    if (!mongoConnectingPromise) {
-      mongoConnectingPromise = db.connectMongo(process.env.MONGODB_URI)
-        .then(() => { mongoConnected = true; })
-        .catch(err => { console.error('[MongoDB Middleware Error]:', err.message); })
-        .finally(() => { mongoConnectingPromise = null; });
+  if (process.env.MONGODB_URI) {
+    if (!mongoConnected) {
+      if (!mongoConnectingPromise) {
+        mongoConnectingPromise = db.connectMongo(process.env.MONGODB_URI)
+          .then(() => { mongoConnected = true; })
+          .catch(err => { console.error('[MongoDB Middleware Error]:', err.message); })
+          .finally(() => { mongoConnectingPromise = null; });
+      }
+      try {
+        await mongoConnectingPromise;
+      } catch (_) {}
+    } else {
+      // Sync cache from MongoDB to ensure multi-container coherence on Vercel
+      try {
+        await db.refreshCache();
+      } catch (e) {
+        console.error('[MongoDB Cache Sync Error]:', e.message);
+      }
     }
-    try {
-      await mongoConnectingPromise;
-    } catch (_) {}
   }
   next();
 });
