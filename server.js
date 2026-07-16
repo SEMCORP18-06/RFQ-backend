@@ -1925,7 +1925,7 @@ app.get('/api/transporter-portal/distributions/:transporterId', (req, res) => {
 // ═══════════════════════════════════════════════════════════
 //  VENDOR PORTAL — SECURE TOKEN ACCESS
 // ═══════════════════════════════════════════════════════════
-app.get('/api/vendor-portal/verify', (req, res) => {
+app.get('/api/vendor-portal/verify', async (req, res) => {
   try {
     const { token } = req.query;
     if (!token) return res.status(400).json({ success: false, message: 'Token is required.' });
