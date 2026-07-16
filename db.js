@@ -21,6 +21,14 @@ mongoose.Query.prototype.exec = function(...args) {
   return promise;
 };
 
+// Helper to queue Model.create/insertMany writes
+function queueMongo(promise) {
+  if (global.mongoPromises) {
+    global.mongoPromises.push(promise.catch(() => {}));
+  }
+  return promise;
+}
+
 // Mongoose Schemas
 const vendorSchema = new mongoose.Schema({
   id: { type: String, unique: true },
