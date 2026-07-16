@@ -10,7 +10,16 @@ try {
   console.warn('[DNS] Failed to set custom DNS servers:', e.message);
 }
 
-
+// Intercept all Mongoose Query exec calls to keep track of pending writes
+global.mongoPromises = [];
+const originalQueryExec = mongoose.Query.prototype.exec;
+mongoose.Query.prototype.exec = function(...args) {
+  const promise = originalQueryExec.apply(this, args);
+  if (global.mongoPromises) {
+    global.mongoPromises.push(promise.catch(() => {}));
+  }
+  return promise;
+};
 
 // Mongoose Schemas
 const vendorSchema = new mongoose.Schema({
@@ -52,6 +61,7 @@ const rfqSchema = new mongoose.Schema({
   expires_at: String,
   excel_filename: String,
   excel_path: String,
+  excel_base64: String,
   custom_headers: String,
   allow_spec_sheet: { type: Number, default: 0 },
   version: { type: Number, default: 1 },
@@ -398,6 +408,13 @@ class Database {
     };
   }
 
+  async waitForMongo() {
+    if (global.mongoPromises && global.mongoPromises.length > 0) {
+      await Promise.all(global.mongoPromises);
+      global.mongoPromises.length = 0;
+    }
+  }
+
   prepare(sql) {
     return new PreparedStatement(sql, this);
   }
@@ -723,15 +740,16 @@ class PreparedStatement {
       return;
     }
 
-    if (sql.includes('UPDATE rfqs SET excel_filename = ?, excel_path = ? WHERE id = ?') || sql.includes('UPDATE rfqs SET excel_filename=?, excel_path=? WHERE id=?')) {
-      const [excel_filename, excel_path, id] = args;
+    if (sql.includes('UPDATE rfqs SET excel_filename = ?, excel_path = ?, excel_base64 = ? WHERE id = ?') || sql.includes('UPDATE rfqs SET excel_filename=?, excel_path=?, excel_base64=? WHERE id=?')) {
+      const [excel_filename, excel_path, excel_base64, id] = args;
       const rfq = this.db.data.rfqs.find(x => x.id === id);
       if (rfq) {
         rfq.excel_filename = excel_filename;
         rfq.excel_path = excel_path;
+        rfq.excel_base64 = excel_base64;
 
         if (mongoose.connection.readyState === 1) {
-          Rfq.findOneAndUpdate({ id }, { excel_filename, excel_path }).exec()
+          Rfq.findOneAndUpdate({ id }, { excel_filename, excel_path, excel_base64 }).exec()
             .catch(err => console.error('[MongoDB Error] RFQ excel update failed:', err.message));
         }
       }
@@ -745,6 +763,8 @@ class PreparedStatement {
       let available_to = null;
       if (sql.includes('available_from')) {
         [available_from, available_to, id] = args;
+      } else if (sql.includes('available_to')) {
+        [available_to, id] = args;
       } else {
         id = args[0];
       }
@@ -1088,10 +1108,31 @@ class PreparedStatement {
       };
       this.db.data.vendor_quotes.push(quote);
 
-      if (mongoose.connection.readyState === 1) {
-        VendorQuote.create(quote)
-          .catch(err => console.error('[MongoDB Error] Quote create failed:', err.message));
-      }
+      // Track pending quote inserts for bulk MongoDB sync (avoids race with deleteMany)
+      if (!this._pendingQuoteInserts) this._pendingQuoteInserts = {};
+      const key = `${rfq_id}|${vendor_id}`;
+      if (!this._pendingQuoteInserts[key]) this._pendingQuoteInserts[key] = [];
+      this._pendingQuoteInserts[key].push(quote);
+
+      // Schedule a debounced flush after all quotes for this rfq+vendor are inserted
+      if (this._quoteFlushTimers) clearTimeout(this._quoteFlushTimers[key]);
+      if (!this._quoteFlushTimers) this._quoteFlushTimers = {};
+      this._quoteFlushTimers[key] = setTimeout(async () => {
+        if (mongoose.connection.readyState === 1) {
+          const toInsert = (this._pendingQuoteInserts || {})[key] || [];
+          if (toInsert.length > 0) {
+            try {
+              // Delete existing + insert new atomically to avoid race conditions
+              await VendorQuote.deleteMany({ rfq_id, vendor_id });
+              await VendorQuote.insertMany(toInsert);
+            } catch (err) {
+              console.error('[MongoDB Error] Bulk quote sync failed:', err.message);
+            } finally {
+              if (this._pendingQuoteInserts) delete this._pendingQuoteInserts[key];
+            }
+          }
+        }
+      }, 150); // 150ms debounce to batch all item inserts for one submission
       return;
     }
 
@@ -1099,10 +1140,14 @@ class PreparedStatement {
       const [rfq_id, vendor_id] = args;
       this.db.data.vendor_quotes = this.db.data.vendor_quotes.filter(x => !(x.rfq_id === rfq_id && x.vendor_id === vendor_id));
 
-      if (mongoose.connection.readyState === 1) {
-        VendorQuote.deleteMany({ rfq_id, vendor_id }).exec()
-          .catch(err => console.error('[MongoDB Error] Quotes delete failed:', err.message));
+      // Clear any pending inserts for this key (will be re-added by subsequent INSERT calls)
+      const key = `${rfq_id}|${vendor_id}`;
+      if (this._pendingQuoteInserts) delete this._pendingQuoteInserts[key];
+      if (this._quoteFlushTimers) {
+        clearTimeout(this._quoteFlushTimers[key]);
+        delete this._quoteFlushTimers[key];
       }
+      // MongoDB delete is handled by the subsequent INSERT flush to avoid race conditions
       return;
     }
 
@@ -1290,7 +1335,8 @@ class PreparedStatement {
         const dist = distsDb.find(d => d.rfq_id === q.rfq_id && d.vendor_id === q.vendor_id);
         if (dist && dist.status === 'Submitted') {
           const rfq = rfqsDb.find(r => r.id === q.rfq_id);
-          const item = itemsDb.find(i => i.id === q.item_id);
+          // Use == (loose equality) to handle Number vs String type mismatch from MongoDB/JSON
+          const item = itemsDb.find(i => i.id == q.item_id);
           const vendor = vendorsDb.find(v => v.id === q.vendor_id);
 
           joined.push({
@@ -1300,10 +1346,12 @@ class PreparedStatement {
             rate: q.rate,
             lead_time_days: q.lead_time_days || q.lead_time || 0,
             remarks: q.remarks || '',
+            payment_terms: dist.payment_terms || q.payment_terms || '',
             rfq_number: rfq ? rfq.rfq_number : 'RFQ-XXX',
             project_name: rfq ? rfq.project_name : 'N/A',
             description: item ? item.description : 'N/A',
             moc: item ? item.moc : 'N/A',
+            make: item ? (item.make || '') : '',
             size: item ? item.size : 'N/A',
             quantity: item ? item.quantity : 0,
             unit: item ? item.unit : 'Nos',

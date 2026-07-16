@@ -38,7 +38,20 @@ const getFrontendUrl = (req) => {
       return `${refUrl.protocol}//${refUrl.host}`;
     } catch (_) {}
   }
+  if (req && req.headers && req.headers.host) {
+    const protocol = (req.secure || req.headers['x-forwarded-proto'] === 'https') ? 'https' : 'http';
+    return `${protocol}://${req.headers.host}`;
+  }
   return `http://localhost:${PORT}`;
+};
+
+const formatDateTimeIST = (date) => {
+  if (!date) return '';
+  const dObj = new Date(date);
+  if (isNaN(dObj.getTime())) return String(date);
+  const d = dObj.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' });
+  const t = dObj.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+  return `${d} ${t}`;
 };
 
 // ─── Directories ─────────────────────────────────────────
@@ -133,105 +146,143 @@ async function sendMailViaSmtp(to, subject, html, attachmentPath = null, attachm
     const plainText = convertHtmlToText(html);
 
     if (sendgridReady) {
-      const sendgridAttachments = [];
-      if (attachmentPath) {
-        if (Array.isArray(attachmentPath)) {
-          attachmentPath.forEach((p, idx) => {
-            if (p && fs.existsSync(p)) {
-              const name = (Array.isArray(attachmentName) && attachmentName[idx]) || (typeof attachmentName === 'string' ? attachmentName : path.basename(p));
-              const content = fs.readFileSync(p).toString('base64');
-              sendgridAttachments.push({
-                content: content,
-                filename: name,
-                type: 'application/octet-stream',
-                disposition: 'attachment'
-              });
-            }
-          });
-        } else if (fs.existsSync(attachmentPath)) {
-          const name = attachmentName || 'RFQ_Attachment.xlsx';
-          const content = fs.readFileSync(attachmentPath).toString('base64');
-          sendgridAttachments.push({
-            content: content,
-            filename: name,
-            type: 'application/octet-stream',
-            disposition: 'attachment'
-          });
-        }
-      }
-
-      const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'rfq@semcogroups.com';
-      const fromName = process.env.SENDGRID_FROM_NAME || 'SEMCO Groups';
-
-      await sgMail.send({
-        to: to,
-        from: {
-          email: fromEmail,
-          name: fromName
-        },
-        subject: subject,
-        html: html,
-        text: plainText,
-        attachments: sendgridAttachments,
-        headers: {
-          'X-Priority': '3',
-          'X-MSMail-Priority': 'Normal',
-          'Importance': 'Normal',
-          'X-Auto-Response-Suppress': 'OOF, AutoReply'
-        }
-      });
-      console.log(`[SendGrid] Email successfully sent to ${to}`);
-      return true;
-    }
-
-    // SMTP fallback — only attempt if credentials are explicitly configured
-    if (!SMTP_CONFIGURED) {
-      console.warn(`[Email Skip] Neither SendGrid nor SMTP credentials are configured. Email to ${to} was NOT sent.`);
-      console.warn('[Email Fix] Set SENDGRID_API_KEY (preferred) or SMTP_HOST + SMTP_USER + SMTP_PASS environment variables.');
-      return false;
-    }
-
-    const attachments = [];
-    if (attachmentPath) {
-      if (Array.isArray(attachmentPath)) {
-        attachmentPath.forEach((p, idx) => {
-          if (p && fs.existsSync(p)) {
-            const name = (Array.isArray(attachmentName) && attachmentName[idx]) || (typeof attachmentName === 'string' ? attachmentName : path.basename(p));
-            attachments.push({
+      try {
+        const sendgridAttachments = [];
+        if (attachmentPath) {
+          if (Array.isArray(attachmentPath)) {
+            attachmentPath.forEach((p, idx) => {
+              if (p && fs.existsSync(p)) {
+                const name = (Array.isArray(attachmentName) && attachmentName[idx]) || (typeof attachmentName === 'string' ? attachmentName : path.basename(p));
+                const content = fs.readFileSync(p).toString('base64');
+                sendgridAttachments.push({
+                  content: content,
+                  filename: name,
+                  type: 'application/octet-stream',
+                  disposition: 'attachment'
+                });
+              }
+            });
+          } else if (fs.existsSync(attachmentPath)) {
+            const name = attachmentName || 'RFQ_Attachment.xlsx';
+            const content = fs.readFileSync(attachmentPath).toString('base64');
+            sendgridAttachments.push({
+              content: content,
               filename: name,
-              path: p
+              type: 'application/octet-stream',
+              disposition: 'attachment'
             });
           }
+        }
+
+        const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'rfq@semcogroups.com';
+        const fromName = process.env.SENDGRID_FROM_NAME || 'SEMCO Groups';
+
+        await sgMail.send({
+          to: to,
+          from: {
+            email: fromEmail,
+            name: fromName
+          },
+          subject: subject,
+          html: html,
+          text: plainText,
+          attachments: sendgridAttachments,
+          headers: {
+            'X-Priority': '3',
+            'X-MSMail-Priority': 'Normal',
+            'Importance': 'Normal',
+            'X-Auto-Response-Suppress': 'OOF, AutoReply'
+          }
         });
-      } else if (fs.existsSync(attachmentPath)) {
-        attachments.push({
-          filename: attachmentName || 'RFQ_Attachment.xlsx',
-          path: attachmentPath
-        });
+        console.log(`[SendGrid] Email successfully sent to ${to}`);
+        return true;
+      } catch (sgErr) {
+        console.error(`[SendGrid Error] Failed to send email to ${to}:`, sgErr.message);
+        // Fall back to SMTP or simulation
       }
     }
 
-    const fromEmail = process.env.SMTP_USER || 'umesh.p@semcogroups.com';
+    if (SMTP_CONFIGURED) {
+      try {
+        const attachments = [];
+        if (attachmentPath) {
+          if (Array.isArray(attachmentPath)) {
+            attachmentPath.forEach((p, idx) => {
+              if (p && fs.existsSync(p)) {
+                const name = (Array.isArray(attachmentName) && attachmentName[idx]) || (typeof attachmentName === 'string' ? attachmentName : path.basename(p));
+                attachments.push({
+                  filename: name,
+                  path: p
+                });
+              }
+            });
+          } else if (fs.existsSync(attachmentPath)) {
+            attachments.push({
+              filename: attachmentName || 'RFQ_Attachment.xlsx',
+              path: attachmentPath
+            });
+          }
+        }
 
-    await smtpTransporter.sendMail({
-      from: `"${process.env.SMTP_FROM_NAME || 'SEMCO Groups'}" <${fromEmail}>`,
-      to: to,
-      subject: subject,
-      html: html,
-      text: plainText,
-      attachments: attachments,
-      headers: {
-        'X-Priority': '3',
-        'X-MSMail-Priority': 'Normal',
-        'Importance': 'Normal',
-        'X-Auto-Response-Suppress': 'OOF, AutoReply',
-        'List-Unsubscribe': `<mailto:${fromEmail}?subject=Unsubscribe-RFQ-Partner>`
+        const fromEmail = process.env.SMTP_USER || 'umesh.p@semcogroups.com';
+
+        await smtpTransporter.sendMail({
+          from: `"${process.env.SMTP_FROM_NAME || 'SEMCO Groups'}" <${fromEmail}>`,
+          to: to,
+          subject: subject,
+          html: html,
+          text: plainText,
+          attachments: attachments,
+          headers: {
+            'X-Priority': '3',
+            'X-MSMail-Priority': 'Normal',
+            'Importance': 'Normal',
+            'X-Auto-Response-Suppress': 'OOF, AutoReply',
+            'List-Unsubscribe': `<mailto:${fromEmail}?subject=Unsubscribe-RFQ-Partner>`
+          }
+        });
+        console.log(`[SMTP] Email successfully sent to ${to}`);
+        return true;
+      } catch (smtpErr) {
+        console.error(`[SMTP Error] Failed to send email to ${to}:`, smtpErr.message);
+        // Fall back to simulation
       }
-    });
-    console.log(`[SMTP] Email successfully sent to ${to}`);
+    }
+
+    // Simulation fallback — runs on localhost when email channels are unconfigured or fail
+    console.log(`[Email Simulation] to: ${to} | subject: ${subject}`);
+
+    let vendorId = null;
+    let rfqId = null;
+
+    const vendor = (db.data.vendors || []).find(v => v.email && v.email.toLowerCase() === to.toLowerCase());
+    if (vendor) {
+      vendorId = vendor.id;
+      const dist = (db.data.rfq_distributions || [])
+        .filter(d => d.vendor_id === vendor.id)
+        .sort((a, b) => (b.sent_at || '').localeCompare(a.sent_at || ''))[0];
+      if (dist) rfqId = dist.rfq_id;
+    } else {
+      const transporter = (db.data.transporters || []).find(t => t.email && t.email.toLowerCase() === to.toLowerCase());
+      if (transporter) {
+        const dist = (db.data.transport_distributions || [])
+          .filter(d => d.transporter_id === transporter.id)
+          .sort((a, b) => (b.sent_at || '').localeCompare(a.sent_at || ''))[0];
+        if (dist) rfqId = dist.request_id;
+      }
+    }
+
+    db.prepare('INSERT INTO notifications (title, message, rfq_id, vendor_id) VALUES (?, ?, ?, ?)')
+      .run(
+        `✉️ [Simulated Email] ${subject}`,
+        `Recipient: ${to}\n\n${plainText.substring(0, 1500)}${plainText.length > 1500 ? '...' : ''}`,
+        rfqId || null,
+        vendorId || null
+      );
+
     return true;
   } catch (error) {
-    console.error(`[Email Error] Failed to send email to ${to}:`, error.message);
+    console.error(`[Email Error] Consolidated email wrapper failed for ${to}:`, error.message);
     return false;
   }
 }
@@ -252,10 +303,8 @@ function formatDateDDMMYYYY(dateStr) {
 
 async function notifyLiveRankingsForRFQ(rfqId) {
   try {
-    // Fast-fail if no email channel is configured (avoids hangs on Vercel)
     if (!sendMailEnabled()) {
-      console.warn(`[Ranking Email] Skipped for RFQ ${rfqId}: no email channel configured (set SENDGRID_API_KEY or SMTP_HOST/USER/PASS).`);
-      return;
+      console.log(`[Ranking Email] Simulating rankings email update for RFQ ${rfqId} (no email channel configured).`);
     }
 
     const rfq = db.prepare('SELECT rfq_number, project_name FROM rfqs WHERE id = ?').get(rfqId);
@@ -326,10 +375,8 @@ async function notifyLiveRankingsForRFQ(rfqId) {
 
 async function notifyLiveRankingsForTransportRequest(requestId) {
   try {
-    // Fast-fail if no email channel is configured (avoids hangs on Vercel)
     if (!sendMailEnabled()) {
-      console.warn(`[Ranking Email] Skipped for Transport Request ${requestId}: no email channel configured (set SENDGRID_API_KEY or SMTP_HOST/USER/PASS).`);
-      return;
+      console.log(`[Ranking Email] Simulating rankings email update for Transport Request ${requestId} (no email channel configured).`);
     }
 
     const reqItem = db.prepare('SELECT request_number, from_location, to_location FROM transport_requests WHERE id = ?').get(requestId);
@@ -406,11 +453,34 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname)));
 
-// Root route to explicitly serve index.html on Vercel
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
+// Middleware to intercept res.json/send and await all pending MongoDB writes
+app.use((req, res, next) => {
+  const originalJson = res.json;
+  res.json = async function(body) {
+    try {
+      if (db.waitForMongo) {
+        await db.waitForMongo();
+      }
+    } catch (err) {
+      console.error('[Middleware MongoDB sync error]:', err.message);
+    }
+    return originalJson.call(this, body);
+  };
 
+  const originalSend = res.send;
+  res.send = async function(body) {
+    try {
+      if (db.waitForMongo) {
+        await db.waitForMongo();
+      }
+    } catch (err) {
+      console.error('[Middleware MongoDB sync error]:', err.message);
+    }
+    return originalSend.call(this, body);
+  };
+
+  next();
+});
 
 // Middleware to ensure database is connected before processing request on Vercel
 let mongoConnected = false;
@@ -1461,8 +1531,11 @@ app.post('/api/rfqs/:id/attach-excel', upload.single('file'), (req, res) => {
     const fs = require('fs');
     fs.renameSync(req.file.path, destPath);
 
-    db.prepare('UPDATE rfqs SET excel_filename = ?, excel_path = ? WHERE id = ?')
-      .run(originalName, destPath, id);
+    // Read file and convert to base64
+    const base64Data = fs.readFileSync(destPath).toString('base64');
+
+    db.prepare('UPDATE rfqs SET excel_filename = ?, excel_path = ?, excel_base64 = ? WHERE id = ?')
+      .run(originalName, destPath, base64Data, id);
 
     logAudit('Admin', 'RFQ_EXCEL_ATTACH', `Excel file attached to RFQ ${id}: ${originalName}`, req);
     res.json({ success: true, filename: originalName });
@@ -1478,15 +1551,24 @@ app.post('/api/rfqs/:id/attach-excel', upload.single('file'), (req, res) => {
 app.get('/api/rfqs/:id/excel-download', (req, res) => {
   try {
     const { id } = req.params;
-    const rfq = db.prepare('SELECT excel_filename, excel_path FROM rfqs WHERE id = ?').get(id);
-    if (!rfq || !rfq.excel_path) return res.status(404).json({ success: false, message: 'No Excel file attached to this RFQ.' });
+    const rfq = db.prepare('SELECT excel_filename, excel_path, excel_base64 FROM rfqs WHERE id = ?').get(id);
+    if (!rfq || (!rfq.excel_path && !rfq.excel_base64)) {
+      return res.status(404).json({ success: false, message: 'No Excel file attached to this RFQ.' });
+    }
 
     const fs = require('fs');
-    if (!fs.existsSync(rfq.excel_path)) return res.status(404).json({ success: false, message: 'Attached file not found on server.' });
+    let fileBuffer;
+    if (rfq.excel_path && fs.existsSync(rfq.excel_path)) {
+      fileBuffer = fs.readFileSync(rfq.excel_path);
+    } else if (rfq.excel_base64) {
+      fileBuffer = Buffer.from(rfq.excel_base64, 'base64');
+    } else {
+      return res.status(404).json({ success: false, message: 'Attached file not found on server.' });
+    }
 
     res.setHeader('Content-Disposition', `attachment; filename="${rfq.excel_filename || 'rfq_attachment.xlsx'}"`);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    fs.createReadStream(rfq.excel_path).pipe(res);
+    res.send(fileBuffer);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -1498,18 +1580,26 @@ app.get('/api/rfqs/:id/excel-download', (req, res) => {
 app.get('/api/rfqs/:id/excel-preview', (req, res) => {
   try {
     const { id } = req.params;
-    const rfq = db.prepare('SELECT excel_filename, excel_path FROM rfqs WHERE id = ?').get(id);
-    if (!rfq || !rfq.excel_path) return res.status(404).json({ success: false, message: 'No Excel file attached to this RFQ.' });
+    const rfq = db.prepare('SELECT excel_filename, excel_path, excel_base64 FROM rfqs WHERE id = ?').get(id);
+    if (!rfq || (!rfq.excel_path && !rfq.excel_base64)) {
+      return res.status(404).json({ success: false, message: 'No Excel file attached to this RFQ.' });
+    }
 
     const fs = require('fs');
-    if (!fs.existsSync(rfq.excel_path)) return res.status(404).json({ success: false, message: 'File not found on server.' });
+    let fileBuffer;
+    if (rfq.excel_path && fs.existsSync(rfq.excel_path)) {
+      fileBuffer = fs.readFileSync(rfq.excel_path);
+    } else if (rfq.excel_base64) {
+      fileBuffer = Buffer.from(rfq.excel_base64, 'base64');
+    } else {
+      return res.status(404).json({ success: false, message: 'File not found on server.' });
+    }
 
-    const workbook = XLSX.readFile(rfq.excel_path, { cellDates: true, raw: false });
+    const workbook = XLSX.read(fileBuffer, { cellDates: true, raw: false });
     const sheets = [];
 
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
-      // header:1 gives raw array-of-arrays, preserving ALL columns
       const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
       if (rawRows.length === 0) { sheets.push({ name: sheetName, headers: [], rows: [] }); continue; }
 
@@ -1550,6 +1640,9 @@ app.post('/api/rfqs/distribute', async (req, res) => {
     }
     const expiresISO = expires.toISOString();
 
+    // Update parent RFQ status to Sent and set calculated expiration date/time
+    db.prepare("UPDATE rfqs SET status = 'Sent', available_to = ? WHERE id = ?").run(expiresISO, rfq_id);
+
     const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'rfq@semcogroups.com';
     const fromName  = process.env.SENDGRID_FROM_NAME  || 'SEMCO Procurement Automation';
 
@@ -1557,6 +1650,21 @@ app.post('/api/rfqs/distribute', async (req, res) => {
     const effectiveTestEmail = '';
 
     const results = [];
+
+    // Pre-build Excel Specifications sheet block if option is active
+    let specSheetHtml = '';
+    if (rfq.allow_spec_sheet && rfq.excel_filename) {
+      const downloadUrl = `${getFrontendUrl(req)}/api/rfqs/${rfq.id}/excel-download`;
+      specSheetHtml = `
+        <div style="background:#f0fdf4;padding:15px;border-radius:6px;margin:20px 0;border-left:4px solid #10b981;font-size:13px;border-top:1px solid #d1fae5;border-right:1px solid #d1fae5;border-bottom:1px solid #d1fae5;">
+          <p style="margin:0 0 6px;font-weight:700;color:#065f46;">📋 Technical Specifications Sheet Attached</p>
+          <p style="margin:0 0 10px;color:#047857;line-height:1.5;">An Excel specifications sheet (<strong>${rfq.excel_filename}</strong>) is attached to this request. You can download it directly from the link below or view it inside the vendor portal.</p>
+          <div style="text-align:left;margin:10px 0 5px 0;">
+            <a href="${downloadUrl}" target="_blank" style="background:#10b981;color:#fff;font-weight:600;text-decoration:none;padding:8px 16px;border-radius:4px;display:inline-block;font-size:12px;">DOWNLOAD SPECIFICATION SHEET</a>
+          </div>
+        </div>
+      `;
+    }
 
     for (const vendorId of vendor_ids) {
       const vendor = db.prepare('SELECT * FROM vendors WHERE id = ?').get(vendorId);
@@ -1593,16 +1701,10 @@ app.post('/api/rfqs/distribute', async (req, res) => {
                 <tr><td style="padding:4px 0;font-weight:600;color:#64748b;">Project:</td><td style="padding:4px 0;">${rfq.project_name}</td></tr>
                 <tr><td style="padding:4px 0;font-weight:600;color:#64748b;">Department:</td><td style="padding:4px 0;">${rfq.department || 'General'}</td></tr>
                 <tr><td style="padding:4px 0;font-weight:600;color:#64748b;width:130px;">Required Delivery:</td><td style="padding:4px 0;color:#dc2626;font-weight:600;">${formatDateDDMMYYYY(rfq.delivery_date)}</td></tr>
-                <tr><td style="padding:4px 0;font-weight:600;color:#64748b;">Expires At:</td><td style="padding:4px 0;color:#dc2626;font-weight:600;">${(() => {
-                  const pad = (n) => n.toString().padStart(2, '0');
-                  const d = pad(expires.getDate());
-                  const m = pad(expires.getMonth() + 1);
-                  const y = expires.getFullYear();
-                  const timeStr = expires.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-                  return `${d}/${m}/${y} ${timeStr}`;
-                })()}</td></tr>
+                <tr><td style="padding:4px 0;font-weight:600;color:#64748b;">Expires At:</td><td style="padding:4px 0;color:#dc2626;font-weight:600;">${formatDateTimeIST(expires)}</td></tr>
               </table>
             </div>
+            ${specSheetHtml}
             <p style="font-size:14px;line-height:1.6;">Click the button below to access your secure vendor portal. You can review specifications and submit unit rates, payment terms, and lead time. Competitor bids are hidden.</p>
             <div style="text-align:center;margin:30px 0;">
               <a href="${targetUrl}" target="_blank" style="background:#2563eb;color:#fff;font-weight:600;text-decoration:none;padding:12px 30px;border-radius:6px;display:inline-block;box-shadow:0 4px 6px -1px rgba(37,99,235,.2);">ACCESS RFQ PORTAL</a>
@@ -1869,89 +1971,6 @@ app.post('/api/vendor-portal/upload-doc', upload.array('files', 10), (req, res) 
       .run(firstDoc.path, firstDoc.name, JSON.stringify(savedDocsList), rfq_id, vendor_id);
 
     logAudit(vendor_id, 'VENDOR_DOC_UPLOAD_MULTIPLE', `Vendor ${vendor_id} uploaded ${savedDocsList.length} supporting docs for RFQ ${rfq_id}`, req);
-
-    // ── Notify admins asynchronously ──────────────────────────────────────────
-    (async () => {
-      try {
-        // Resolve vendor name
-        const vendorRow = db.prepare('SELECT name, company_name FROM vendors WHERE id = ?').get(vendor_id);
-        const vendorName = (vendorRow && (vendorRow.company_name || vendorRow.name)) || vendor_id;
-
-        // Resolve RFQ details
-        const rfqRow = db.prepare('SELECT rfq_number, project_name FROM rfqs WHERE id = ?').get(rfq_id);
-        const rfqNumber  = rfqRow ? rfqRow.rfq_number  : rfq_id;
-        const projectName = rfqRow ? (rfqRow.project_name || '-') : '-';
-
-        // Collect all Procurement Admin emails from the users table
-        // Use simple WHERE (JsonDB limitation) and filter email in JS
-        const adminUsers = db.prepare("SELECT email FROM users WHERE role = 'Procurement Admin'").all();
-        const adminEmails = adminUsers.map(u => u.email).filter(Boolean);
-        if (adminEmails.length === 0) {
-          // Fallback to SMTP sender as admin
-          const fallback = process.env.SMTP_USER || process.env.SENDGRID_FROM_EMAIL;
-          if (fallback) adminEmails.push(fallback);
-        }
-
-        if (adminEmails.length === 0) return; // No admin to notify
-
-        // Build document list HTML
-        const docsHtml = savedDocsList.map(d => `<li style="margin-bottom:4px;">📎 ${d.name}</li>`).join('');
-
-        const subject = `📄 Specification Sheet Shared — ${vendorName} | RFQ ${rfqNumber}`;
-        const html = `
-          <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
-            <div style="background:#0f172a;padding:24px 32px;">
-              <h2 style="color:#ffffff;margin:0;font-size:18px;">📄 Supporting Document Shared</h2>
-              <p style="color:#94a3b8;margin:6px 0 0;font-size:13px;">SEMCO Smart RFQ Platform — Vendor Notification</p>
-            </div>
-            <div style="padding:28px 32px;background:#ffffff;">
-              <p style="color:#1e293b;font-size:15px;margin-top:0;">
-                A vendor has uploaded a <strong>specification sheet / supporting document</strong> for an active RFQ.
-              </p>
-              <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px;">
-                <tr style="background:#f8fafc;">
-                  <td style="padding:10px 14px;color:#64748b;width:40%;border-bottom:1px solid #e2e8f0;"><strong>Vendor</strong></td>
-                  <td style="padding:10px 14px;color:#1e293b;border-bottom:1px solid #e2e8f0;">${vendorName}</td>
-                </tr>
-                <tr>
-                  <td style="padding:10px 14px;color:#64748b;border-bottom:1px solid #e2e8f0;"><strong>RFQ Number</strong></td>
-                  <td style="padding:10px 14px;color:#1e293b;border-bottom:1px solid #e2e8f0;">${rfqNumber}</td>
-                </tr>
-                <tr style="background:#f8fafc;">
-                  <td style="padding:10px 14px;color:#64748b;border-bottom:1px solid #e2e8f0;"><strong>Project</strong></td>
-                  <td style="padding:10px 14px;color:#1e293b;border-bottom:1px solid #e2e8f0;">${projectName}</td>
-                </tr>
-                <tr>
-                  <td style="padding:10px 14px;color:#64748b;"><strong>Documents (${savedDocsList.length})</strong></td>
-                  <td style="padding:10px 14px;color:#1e293b;">
-                    <ul style="margin:0;padding-left:18px;">${docsHtml}</ul>
-                  </td>
-                </tr>
-              </table>
-              <p style="color:#64748b;font-size:13px;margin-top:20px;">
-                The attached file(s) are included with this email. Log in to the RFQ portal to review the full submission.
-              </p>
-            </div>
-            <div style="background:#f1f5f9;padding:14px 32px;text-align:center;">
-              <p style="color:#94a3b8;font-size:12px;margin:0;">© ${new Date().getFullYear()} SEMCO Groups — Automated Procurement Notification</p>
-            </div>
-          </div>
-        `;
-
-        // Attach the uploaded files
-        const attachPaths = savedDocsList.map(d => d.path);
-        const attachNames = savedDocsList.map(d => d.name);
-
-        for (const adminEmail of adminEmails) {
-          await sendMailViaSmtp(adminEmail, subject, html, attachPaths, attachNames);
-          console.log(`[Doc Upload] Notification sent to admin ${adminEmail} — ${savedDocsList.length} doc(s) from vendor ${vendorName}`);
-        }
-      } catch (emailErr) {
-        console.error('[Doc Upload] Failed to send admin notification:', emailErr.message);
-      }
-    })().catch(err => console.error('[Doc Upload] Async email error:', err.message));
-    // ─────────────────────────────────────────────────────────────────────────
-
     res.json({ success: true, files: savedDocsList });
   } catch (err) {
     uploadedFiles.forEach(f => cleanUpFile(f.path));
@@ -2162,10 +2181,10 @@ app.get('/api/rfqs/:id/comparative', (req, res) => {
         cgst_applicable: d.cgst_applicable || 0,
         sgst_applicable: d.sgst_applicable || 0,
         transport_included: d.transport_included || 0,
-        transport_packaging: parseFloat(d.transport_packaging) || 0,
-        transport_freight: parseFloat(d.transport_freight) || 0,
-        transport_loading: parseFloat(d.transport_loading) || 0,
-        transport_other: parseFloat(d.transport_other) || 0,
+        transport_packaging: d.transport_packaging || 0,
+        transport_freight: d.transport_freight || 0,
+        transport_loading: d.transport_loading || 0,
+        transport_other: d.transport_other || 0,
         payment_terms: d.payment_terms || ''
       };
     }
@@ -2182,26 +2201,31 @@ app.get('/api/rfqs/:id/comparative', (req, res) => {
       }
     }
 
-    // Sort by all-inclusive cost (final_cost when available, else raw total_value)
+    const getInclusiveCost = (v) => {
+      const base = v.total_value || 0;
+      const cgst = (v.cgst_applicable === 1 || v.cgst_applicable === true) ? (base * 0.09) : 0;
+      const sgst = (v.sgst_applicable === 1 || v.sgst_applicable === true) ? (base * 0.09) : 0;
+      const transportTotal = (v.transport_included === 1 || v.transport_included === true) ? 0 :
+        ((v.transport_packaging || 0) + (v.transport_freight || 0) + (v.transport_loading || 0) + (v.transport_other || 0));
+      return base + cgst + sgst + transportTotal;
+    };
+
     const rankingArray = Object.values(vendorTotals)
       .map(v => {
         if (v.item_count > 0) v.avg_lead_time = Math.round(v.avg_lead_time / v.item_count);
-        // inclusive_cost: prefer vendor-confirmed final_cost; fall back to raw item total
-        v.inclusive_cost = v.final_cost > 0 ? v.final_cost : v.total_value;
+        v.final_cost = getInclusiveCost(v);
         return v;
       })
-      .filter(v => v.total_value > 0 || v.final_cost > 0)
-      .sort((a, b) => a.inclusive_cost - b.inclusive_cost);
+      .filter(v => v.total_value > 0)
+      .sort((a, b) => a.final_cost - b.final_cost);
 
     const rankings = rankingArray.map((v, i) => ({
       rank: i + 1,
       vendor_id: v.vendor_id,
       vendor: v.vendor_name,
       total_rate: v.total_value,
-      inclusive_cost: v.inclusive_cost,
       lead_time: v.avg_lead_time,
-      // Price deviation is based on all-inclusive cost
-      difference: i === 0 ? '0.0%' : (((v.inclusive_cost - rankingArray[0].inclusive_cost) / rankingArray[0].inclusive_cost) * 100).toFixed(1) + '%',
+      difference: i === 0 ? '0.0%' : (((v.final_cost - rankingArray[0].final_cost) / rankingArray[0].final_cost) * 100).toFixed(1) + '%',
       preferred: v.preferred,
       final_cost: v.final_cost,
       cgst_applicable: v.cgst_applicable || 0,
@@ -2214,15 +2238,15 @@ app.get('/api/rfqs/:id/comparative', (req, res) => {
       payment_terms: v.payment_terms || ''
     }));
 
-    // Winner metrics use all-inclusive cost
+    // Winner metrics
     let winningVendor = '', winningValue = 0, savingsAchieved = 0, pctAdvantage = 0;
     if (rankings.length > 0) {
       winningVendor = rankings[0].vendor;
-      winningValue  = rankings[0].inclusive_cost;
+      winningValue  = rankings[0].final_cost;
       if (rankings.length > 1) {
-        const avgTot = rankings.reduce((s, r) => s + r.inclusive_cost, 0) / rankings.length;
+        const avgTot = rankings.reduce((s, r) => s + r.final_cost, 0) / rankings.length;
         savingsAchieved = Math.max(0, avgTot - winningValue);
-        pctAdvantage    = avgTot > 0 ? ((avgTot - winningValue) / avgTot) * 100 : 0;
+        pctAdvantage    = ((avgTot - winningValue) / avgTot) * 100;
       }
     }
 
@@ -2297,7 +2321,7 @@ app.get('/api/submissions', (_req, res) => {
              r.rfq_number, r.project_name, i.description, i.moc, i.make, i.size, i.quantity, i.unit, 
              v.name as vendor_name, d.final_cost, d.cgst_applicable, d.sgst_applicable, d.submitted_at,
              d.transport_included, d.transport_packaging, d.transport_freight, d.transport_loading, d.transport_other,
-             d.payment_terms, d.sent_at
+             d.payment_terms
       FROM vendor_quotes q
       JOIN rfqs r ON q.rfq_id = r.id
       JOIN rfq_items i ON q.item_id = i.id
@@ -2841,14 +2865,7 @@ app.post('/api/transport-requests/distribute', async (req, res) => {
                   <tr><td style="padding:4px 0;font-weight:600;color:#1d4ed8;width:130px;">Request Number:</td><td style="font-weight:700;">${request.request_number}</td></tr>
                   <tr><td style="padding:4px 0;font-weight:600;color:#1d4ed8;">Route:</td><td>${request.from_location} to ${request.to_location}</td></tr>
                   <tr><td style="padding:4px 0;font-weight:600;color:#1d4ed8;">Required Date:</td><td>${formatDateDDMMYYYY(request.required_date)}</td></tr>
-                  <tr><td style="padding:4px 0;font-weight:600;color:#1d4ed8;">Expires At:</td><td style="color:#dc2626;font-weight:600;">${(() => {
-                    const pad = (n) => n.toString().padStart(2, '0');
-                    const d = pad(expires.getDate());
-                    const m = pad(expires.getMonth() + 1);
-                    const y = expires.getFullYear();
-                    const timeStr = expires.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-                    return `${d}/${m}/${y} ${timeStr}`;
-                  })()}</td></tr>
+                  <tr><td style="padding:4px 0;font-weight:600;color:#1d4ed8;">Expires At:</td><td style="color:#dc2626;font-weight:600;">${formatDateTimeIST(expires)}</td></tr>
                 </table>
               </div>
               <div style="text-align:center;margin:30px 0;">
@@ -3314,13 +3331,20 @@ app.post('/api/rfqs/:id/finalise', async (req, res) => {
       });
 
       if (d.status === 'Submitted' && submitted_count > 0) {
+        const base = total_value;
+        const cgst = (d.cgst_applicable === 1 || d.cgst_applicable === true) ? (base * 0.09) : 0;
+        const sgst = (d.sgst_applicable === 1 || d.sgst_applicable === true) ? (base * 0.09) : 0;
+        const transportTotal = (d.transport_included === 1 || d.transport_included === true) ? 0 :
+          ((d.transport_packaging || 0) + (d.transport_freight || 0) + (d.transport_loading || 0) + (d.transport_other || 0));
+        const calculatedFinalCost = base + cgst + sgst + transportTotal;
+
         vendorTotals.push({
           vendor_id: d.vendor_id,
           vendor_name: d.vendor_name,
           vendor_email: d.vendor_email,
           contact_person: d.contact_person || d.vendor_name,
           total_value,
-          final_cost: d.final_cost || total_value
+          final_cost: parseFloat(d.final_cost) || calculatedFinalCost
         });
       }
     });
@@ -3339,7 +3363,7 @@ app.post('/api/rfqs/:id/finalise', async (req, res) => {
       l1VendorEmail = vendorTotals[0].vendor_email;
       l1VendorContact = vendorTotals[0].contact_person || vendorTotals[0].vendor_name;
       l1TotalValue = vendorTotals[0].total_value;
-      l1FinalCost = vendorTotals[0].final_cost || 0;
+      l1FinalCost = vendorTotals[0].final_cost;
     }
 
     const notifiedVendors = [];
@@ -3584,7 +3608,7 @@ app.post('/api/transport-requests/:id/finalise', async (req, res) => {
 });
 
 // POST extend RFQ bidding window
-app.post('/api/rfqs/:id/extend', (req, res) => {
+app.post('/api/rfqs/:id/extend', async (req, res) => {
   try {
     const { hours } = req.body;
     const hrs = parseFloat(hours);
@@ -3608,18 +3632,82 @@ app.post('/api/rfqs/:id/extend', (req, res) => {
       db.prepare("UPDATE rfqs SET status = 'Sent' WHERE id = ?").run(rfq.id);
     }
 
-    db.prepare(`INSERT INTO notifications (title, message, rfq_id) VALUES (?, ?, ?)`)
-      .run('RFQ Window Extended', `RFQ ${rfq.rfq_number} bidding window extended by ${hrs} hours. New deadline: ${newExpiry.toLocaleString()}`, rfq.id);
-    logAudit(req.headers['x-user'] || 'Admin', 'RFQ_WINDOW_EXTEND', `Extended RFQ ${rfq.rfq_number} by ${hrs} hours. New deadline: ${newExpiryISO}`, req);
+    // Find pending/unsubmitted distributions to notify
+    const pending = db.prepare(`
+      SELECT d.*, v.name AS vendor_name, v.email AS vendor_email, v.contact_person
+      FROM rfq_distributions d JOIN vendors v ON d.vendor_id = v.id
+      WHERE d.rfq_id = ? AND d.status != 'Submitted'
+    `).all(rfq.id);
 
-    res.json({ success: true, new_expiry: newExpiryISO, message: `Bidding window successfully extended by ${hrs} hours.` });
+    const sentVendors = [];
+
+    for (const d of pending) {
+      // Update distribution status to Sent, reset reminders
+      db.prepare("UPDATE rfq_distributions SET status = 'Sent' WHERE rfq_id = ? AND vendor_id = ?")
+        .run(rfq.id, d.vendor_id);
+      db.prepare("UPDATE rfq_distributions SET reminder_60_sent = ? WHERE rfq_id = ? AND vendor_id = ?")
+        .run(0, rfq.id, d.vendor_id);
+      db.prepare("UPDATE rfq_distributions SET reminder_30_sent = ? WHERE rfq_id = ? AND vendor_id = ?")
+        .run(0, rfq.id, d.vendor_id);
+
+      // Send extension email
+      const portalUrl = `${getFrontendUrl(req)}/index.html?token=${d.token}`;
+      const subject = `EXTENDED: Request For Quotation ${rfq.rfq_number} — SEMCO Groups`;
+      
+      const pad = (n) => n.toString().padStart(2, '0');
+      const day = pad(newExpiry.getDate());
+      const month = pad(newExpiry.getMonth() + 1);
+      const year = newExpiry.getFullYear();
+      const timeStr = newExpiry.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+      const formattedExpiry = `${day}/${month}/${year} ${timeStr}`;
+
+      const emailHtml = `
+        <div style="font-family:'Inter','Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
+          <div style="background:#0f172a;padding:25px;text-align:center;border-bottom:3px solid #f59e0b;">
+            <h1 style="color:#fff;margin:0;font-size:20px;font-weight:700;">🔄 RFQ BIDDING EXTENDED</h1>
+            <p style="color:#fbbf24;margin:5px 0 0;font-size:13px;">Your submission window has been extended</p>
+          </div>
+          <div style="padding:30px;background:#fff;">
+            <p style="font-size:15px;margin-top:0;">Dear <strong>${d.contact_person || d.vendor_name}</strong>,</p>
+            <p style="line-height:1.6;font-size:14px;">The bidding window for <strong>RFQ ${rfq.rfq_number}</strong> has been extended.</p>
+            <p style="line-height:1.6;font-size:14px;">Please access your vendor portal using the link below and submit your rates before the new deadline.</p>
+            <div style="background:#fffbeb;padding:15px;border-radius:6px;margin:20px 0;border-left:4px solid #f59e0b;">
+              <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                <tr><td style="padding:4px 0;font-weight:600;color:#b45309;width:130px;">RFQ Number:</td><td style="font-weight:700;">${rfq.rfq_number}</td></tr>
+                <tr><td style="padding:4px 0;font-weight:600;color:#b45309;">Project:</td><td>${rfq.project_name}</td></tr>
+                <tr><td style="padding:4px 0;font-weight:600;color:#b45309;width:130px;">Required Delivery:</td><td>${formatDateDDMMYYYY(rfq.delivery_date)}</td></tr>
+                <tr><td style="padding:4px 0;font-weight:600;color:#b45309;">New Expiry Time:</td><td style="color:#dc2626;font-weight:700;">${formattedExpiry}</td></tr>
+              </table>
+            </div>
+            <div style="text-align:center;margin:30px 0;">
+              <a href="${portalUrl}" target="_blank" style="background:#f59e0b;color:#fff;font-weight:600;text-decoration:none;padding:12px 30px;border-radius:6px;display:inline-block;box-shadow:0 4px 6px -1px rgba(245,158,11,.2);">ACCESS PORTAL & SUBMIT RATES</a>
+            </div>
+            <p style="font-size:12px;color:#94a3b8;text-align:center;">This link is unique to you. Do not share.</p>
+          </div>
+          <div style="background:#0f172a;padding:15px;text-align:center;font-size:11px;color:#ffffff;">&copy; ${new Date().getFullYear()} SEMCO Groups | umesh.p@semcogroups.com</div>
+        </div>`;
+
+      try {
+        await sendMailViaSmtp(d.vendor_email, subject, emailHtml);
+      } catch (mailErr) {
+        console.error(`[SMTP Extend Error] ${d.vendor_email}:`, mailErr.message);
+      }
+      sentVendors.push(d.vendor_name);
+    }
+
+    db.prepare(`INSERT INTO notifications (title, message, rfq_id) VALUES (?, ?, ?)`)
+      .run('RFQ Window Extended', `RFQ ${rfq.rfq_number} bidding window extended by ${hrs} hours. New deadline: ${newExpiry.toLocaleString()}. Notified ${sentVendors.length} vendors.`, rfq.id);
+    logAudit(req.headers['x-user'] || 'Admin', 'RFQ_WINDOW_EXTEND', `Extended RFQ ${rfq.rfq_number} by ${hrs} hours. New deadline: ${newExpiryISO}. Notified ${sentVendors.length} vendors.`, req);
+
+    res.json({ success: true, new_expiry: newExpiryISO, message: `Bidding window successfully extended by ${hrs} hours. Notified ${sentVendors.length} pending vendors.` });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // POST extend Transport Request bidding window
-app.post('/api/transport-requests/:id/extend', (req, res) => {
+// POST extend Transport Request bidding window
+app.post('/api/transport-requests/:id/extend', async (req, res) => {
   try {
     const { hours } = req.body;
     const hrs = parseFloat(hours);
@@ -3644,11 +3732,74 @@ app.post('/api/transport-requests/:id/extend', (req, res) => {
     }
     db.prepare("UPDATE transport_distributions SET status = 'Sent' WHERE request_id = ? AND status = 'Expired'").run(request.id);
 
-    db.prepare(`INSERT INTO notifications (title, message, rfq_id) VALUES (?, ?, ?)`)
-      .run('Transport Request Window Extended', `Transport Request ${request.request_number} bidding window extended by ${hrs} hours. New deadline: ${newExpiry.toLocaleString()}`, request.id);
-    logAudit(req.headers['x-user'] || 'Admin', 'TRANSPORT_REQ_WINDOW_EXTEND', `Extended request ${request.request_number} by ${hrs} hours. New deadline: ${newExpiryISO}`, req);
+    // Find pending/unsubmitted distributions to notify
+    const pending = db.prepare(`
+      SELECT d.*, t.name AS transporter_name, t.email AS transporter_email, t.contact_person
+      FROM transport_distributions d JOIN transporters t ON d.transporter_id = t.id
+      WHERE d.request_id = ? AND d.status != 'Submitted'
+    `).all(request.id);
 
-    res.json({ success: true, new_expiry: newExpiryISO, message: `Bidding window successfully extended by ${hrs} hours.` });
+    const sentTransporters = [];
+
+    for (const d of pending) {
+      // Update distribution status to Sent, reset reminders
+      db.prepare("UPDATE transport_distributions SET status = ?, sent_at = ? WHERE request_id = ? AND transporter_id = ?")
+        .run('Sent', new Date().toISOString(), request.id, d.transporter_id);
+      db.prepare("UPDATE transport_distributions SET reminder_60_sent = ? WHERE request_id = ? AND transporter_id = ?")
+        .run(0, request.id, d.transporter_id);
+      db.prepare("UPDATE transport_distributions SET reminder_30_sent = ? WHERE request_id = ? AND transporter_id = ?")
+        .run(0, request.id, d.transporter_id);
+
+      // Send extension email
+      const portalUrl = `${getFrontendUrl(req)}/index.html?transport_token=${d.token}`;
+      const subject = `EXTENDED: Transport Bid Request ${request.request_number} — SEMCO Groups`;
+
+      const pad = (n) => n.toString().padStart(2, '0');
+      const day = pad(newExpiry.getDate());
+      const month = pad(newExpiry.getMonth() + 1);
+      const year = newExpiry.getFullYear();
+      const timeStr = newExpiry.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+      const formattedExpiry = `${day}/${month}/${year} ${timeStr}`;
+
+      const emailHtml = `
+        <div style="font-family:'Inter',Arial,sans-serif;max-width:600px;margin:0 auto;color:#1e293b;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden;">
+          <div style="background:#0f172a;padding:25px;text-align:center;border-bottom:3px solid #3b82f6;">
+            <h1 style="color:#fff;margin:0;font-size:20px;">🔄 TRANSPORT BIDDING EXTENDED</h1>
+            <p style="color:#60a5fa;margin:5px 0 0;font-size:13px;">Your submission window has been extended</p>
+          </div>
+          <div style="padding:30px;background:#fff;">
+            <p style="font-size:15px;margin-top:0;">Dear <strong>${d.contact_person || d.transporter_name}</strong>,</p>
+            <p style="line-height:1.6;font-size:14px;">The bidding window for <strong>Transport Request ${request.request_number}</strong> has been extended.</p>
+            <p style="line-height:1.6;font-size:14px;">Please access your transporter portal using the link below and submit your quote before the new deadline.</p>
+            <div style="background:#f0f9ff;padding:15px;border-radius:6px;margin:20px 0;border-left:4px solid #3b82f6;">
+              <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                <tr><td style="padding:4px 0;font-weight:600;color:#1d4ed8;width:130px;">Request Number:</td><td style="font-weight:700;">${request.request_number}</td></tr>
+                <tr><td style="padding:4px 0;font-weight:600;color:#1d4ed8;">Route:</td><td>${request.from_location} to ${request.to_location}</td></tr>
+                <tr><td style="padding:4px 0;font-weight:600;color:#1d4ed8;">Required Date:</td><td>${formatDateDDMMYYYY(request.required_date)}</td></tr>
+                <tr><td style="padding:4px 0;font-weight:600;color:#1d4ed8;">New Expiry Time:</td><td style="color:#dc2626;font-weight:700;">${formattedExpiry}</td></tr>
+              </table>
+            </div>
+            <div style="text-align:center;margin:30px 0;">
+              <a href="${portalUrl}" target="_blank" style="background:#2563eb;color:#fff;font-weight:600;text-decoration:none;padding:12px 30px;border-radius:6px;display:inline-block;box-shadow:0 4px 6px -1px rgba(37,99,235,.2);">ACCESS PORTAL & SUBMIT BID NOW</a>
+            </div>
+            <p style="font-size:12px;color:#94a3b8;text-align:center;">This link is unique to you. Do not share.</p>
+          </div>
+          <div style="background:#0f172a;padding:15px;text-align:center;font-size:11px;color:#ffffff;">&copy; ${new Date().getFullYear()} SEMCO Groups | umesh.p@semcogroups.com</div>
+        </div>`;
+
+      try {
+        await sendMailViaSmtp(d.transporter_email, subject, emailHtml);
+      } catch (mailErr) {
+        console.error(`[SMTP Extend Error] ${d.transporter_email}:`, mailErr.message);
+      }
+      sentTransporters.push(d.transporter_name);
+    }
+
+    db.prepare(`INSERT INTO notifications (title, message, rfq_id) VALUES (?, ?, ?)`)
+      .run('Transport Request Window Extended', `Transport Request ${request.request_number} bidding window extended by ${hrs} hours. New deadline: ${newExpiry.toLocaleString()}. Notified ${sentTransporters.length} transporters.`, request.id);
+    logAudit(req.headers['x-user'] || 'Admin', 'TRANSPORT_REQ_WINDOW_EXTEND', `Extended request ${request.request_number} by ${hrs} hours. New deadline: ${newExpiryISO}. Notified ${sentTransporters.length} transporters.`, req);
+
+    res.json({ success: true, new_expiry: newExpiryISO, message: `Bidding window successfully extended by ${hrs} hours. Notified ${sentTransporters.length} pending transporters.` });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -4348,7 +4499,7 @@ app.get('/api/onboarding/verify', (req, res) => {
 });
 
 // Partner onboarding submission endpoint
-app.post('/api/onboarding/submit', (req, res) => {
+app.post('/api/onboarding/submit', async (req, res) => {
   try {
     const { token, name, email, contact_person, phone, address, bank_name, bank_address, account_name, account_type, account_number, ifsc_code, gst_number, pan_number, msme_status } = req.body;
     if (!token) return res.status(400).json({ success: false, message: 'Token is required.' });
@@ -4387,7 +4538,85 @@ app.post('/api/onboarding/submit', (req, res) => {
         id
       );
 
-      logAudit('System', 'VENDOR_ONBOARD', `Vendor ${name || existing.name} completed profile onboarding registration.`, req);
+      const updated = db.prepare('SELECT * FROM vendors WHERE id = ?').get(id);
+
+      logAudit('System', 'VENDOR_ONBOARD', `Vendor ${updated.name} completed profile onboarding registration.`, req);
+
+      // Send notification email to admin asynchronously
+      (async () => {
+        try {
+          const adminEmail = process.env.ADMIN_EMAIL || 'umesh.p@semcogroups.com';
+          const subject = `[New Onboarding] Partner Registration Submitted — ${updated.name}`;
+          const emailHtml = `
+            <div style="font-family:'Segoe UI',Arial,sans-serif;color:#333;max-width:600px;margin:auto;border:1px solid #e2e8f0;border-radius:8px;padding:24px;">
+              <h3 style="color:#1e3a8a;border-bottom:2px solid #3b82f6;padding-bottom:8px;margin-top:0;">New Partner Onboarding Registration</h3>
+              <p>The vendor <strong>${updated.name}</strong> (${updated.email}) has completed and submitted their onboarding registration details on the portal.</p>
+              
+              <h4 style="color:#2563eb;margin-bottom:8px;">Company Registry Information:</h4>
+              <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+                <tr>
+                  <td style="padding:6px;font-weight:600;width:45%;border-bottom:1px solid #f1f5f9;color:#555;">Partner Type:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;font-weight:bold;color:#1e3a8a;">Vendor</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Contact Person:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;font-weight:bold;">${updated.contact_person || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Contact Number:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;font-weight:bold;">${updated.phone || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Address of Company:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;">${updated.address || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Name of Bank:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;">${updated.bank_name || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Address of Bank:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;">${updated.bank_address || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Account Name:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;">${updated.account_name || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Account Type:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;">${updated.account_type || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Account Number:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;font-family:monospace;font-weight:bold;">${updated.account_number || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">IFSC Code:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;font-family:monospace;font-weight:bold;">${updated.ifsc_code || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">GST Identification Number:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;font-family:monospace;font-weight:bold;">${updated.gst_number || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Permanent Account Number (PAN):</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;font-family:monospace;font-weight:bold;">${updated.pan_number || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">MSME Company Status:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;font-weight:bold;color:${updated.msme_status === 'Yes' ? '#16a34a' : '#dc2626'};">${updated.msme_status || 'No'}</td>
+                </tr>
+              </table>
+              
+              <p style="font-size:12px;color:#64748b;text-align:center;margin-top:24px;border-top:1px solid #e2e8f0;padding-top:12px;">This is an automated notification from the SEMCO Smart RFQ System.</p>
+            </div>
+          `;
+          await sendMailViaSmtp(adminEmail, subject, emailHtml);
+        } catch (mailErr) {
+          console.error('[Onboarding Vendor Email Error]', mailErr.message);
+        }
+      })().catch(err => console.error("Error in onboarding vendor email async function:", err));
+
       return res.json({ success: true, message: 'Registration profile successfully submitted!' });
     } else if (type === 'transporter') {
       const existing = db.prepare('SELECT * FROM transporters WHERE id = ?').get(id);
@@ -4414,7 +4643,81 @@ app.post('/api/onboarding/submit', (req, res) => {
         id
       );
 
-      logAudit('System', 'TRANSPORTER_ONBOARD', `Transporter ${name || existing.name} completed profile onboarding registration.`, req);
+      const updated = db.prepare('SELECT * FROM transporters WHERE id = ?').get(id);
+
+      logAudit('System', 'TRANSPORTER_ONBOARD', `Transporter ${updated.name} completed profile onboarding registration.`, req);
+
+      // Send notification email to admin asynchronously
+      (async () => {
+        try {
+          const adminEmail = process.env.ADMIN_EMAIL || 'umesh.p@semcogroups.com';
+          const subject = `[New Onboarding] Partner Registration Submitted — ${updated.name}`;
+          const emailHtml = `
+            <div style="font-family:'Segoe UI',Arial,sans-serif;color:#333;max-width:600px;margin:auto;border:1px solid #e2e8f0;border-radius:8px;padding:24px;">
+              <h3 style="color:#1e3a8a;border-bottom:2px solid #3b82f6;padding-bottom:8px;margin-top:0;">New Partner Onboarding Registration</h3>
+              <p>The transporter <strong>${updated.name}</strong> (${updated.email}) has completed and submitted their onboarding registration details on the portal.</p>
+              
+              <h4 style="color:#2563eb;margin-bottom:8px;">Company Registry Information:</h4>
+              <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+                <tr>
+                  <td style="padding:6px;font-weight:600;width:45%;border-bottom:1px solid #f1f5f9;color:#555;">Partner Type:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;font-weight:bold;color:#1e3a8a;">Transporter</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Contact Person:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;font-weight:bold;">${updated.contact_person || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Contact Number:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;font-weight:bold;">${updated.phone || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Address of Company:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;">${updated.address || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Name of Bank:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;">${updated.bank_name || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Address of Bank:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;">${updated.bank_address || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Account Name:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;">${updated.account_name || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Account Type:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;">${updated.account_type || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Account Number:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;font-family:monospace;font-weight:bold;">${updated.account_number || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">IFSC Code:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;font-family:monospace;font-weight:bold;">${updated.ifsc_code || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">GST Identification Number:</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;font-family:monospace;font-weight:bold;">${updated.gst_number || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px;font-weight:600;border-bottom:1px solid #f1f5f9;color:#555;">Permanent Account Number (PAN):</td>
+                  <td style="padding:6px;border-bottom:1px solid #f1f5f9;font-family:monospace;font-weight:bold;">${updated.pan_number || '-'}</td>
+                </tr>
+              </table>
+              
+              <p style="font-size:12px;color:#64748b;text-align:center;margin-top:24px;border-top:1px solid #e2e8f0;padding-top:12px;">This is an automated notification from the SEMCO Smart RFQ System.</p>
+            </div>
+          `;
+          await sendMailViaSmtp(adminEmail, subject, emailHtml);
+        } catch (mailErr) {
+          console.error('[Onboarding Transporter Email Error]', mailErr.message);
+        }
+      })().catch(err => console.error("Error in onboarding transporter email async function:", err));
+
       return res.json({ success: true, message: 'Registration profile successfully submitted!' });
     } else {
       return res.status(400).json({ success: false, message: 'Invalid onboarding partner type.' });
