@@ -1145,6 +1145,22 @@ app.post('/api/auth/register', (req, res) => {
   }
 });
 
+app.get('/api/auth/verify', (req, res) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    if (!authHeader) return res.status(401).json({ success: false, message: 'No token provided' });
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.id);
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'User no longer exists on the server.' });
+    }
+    res.json({ success: true, user });
+  } catch (err) {
+    res.status(401).json({ success: false, message: err.message });
+  }
+});
+
 app.post('/api/auth/login', (req, res) => {
   try {
     const { email, password } = req.body;
