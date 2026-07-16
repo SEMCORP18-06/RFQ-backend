@@ -1995,8 +1995,8 @@ class PreparedStatement {
       this.db.data.transport_request_items.push(item);
 
       if (mongoose.connection.readyState === 1) {
-        TransportRequestItem.create(item)
-          .catch(err => console.error('[MongoDB Error] TransportRequestItem create failed:', err.message));
+        queueMongo(TransportRequestItem.create(item)
+          .catch(err => console.error('[MongoDB Error] TransportRequestItem create failed:', err.message)));
       }
       return;
     }
@@ -2172,8 +2172,8 @@ class PreparedStatement {
       this.db.data.transport_distributions.push(dist);
 
       if (mongoose.connection.readyState === 1) {
-        TransportDistribution.create(dist)
-          .catch(err => console.error('[MongoDB Error] TransportDistribution create failed:', err.message));
+        queueMongo(TransportDistribution.create(dist)
+          .catch(err => console.error('[MongoDB Error] TransportDistribution create failed:', err.message)));
       }
       return;
     }
