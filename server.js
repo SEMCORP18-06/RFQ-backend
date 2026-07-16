@@ -151,7 +151,14 @@ async function sendMailViaSmtp(to, subject, html, attachmentPath = null, attachm
         if (attachmentPath) {
           if (Array.isArray(attachmentPath)) {
             attachmentPath.forEach((p, idx) => {
-              if (p && fs.existsSync(p)) {
+              if (p && typeof p === 'object' && p.content) {
+                sendgridAttachments.push({
+                  content: p.content,
+                  filename: p.name,
+                  type: p.type || 'application/octet-stream',
+                  disposition: 'attachment'
+                });
+              } else if (p && fs.existsSync(p)) {
                 const name = (Array.isArray(attachmentName) && attachmentName[idx]) || (typeof attachmentName === 'string' ? attachmentName : path.basename(p));
                 const content = fs.readFileSync(p).toString('base64');
                 sendgridAttachments.push({
@@ -161,6 +168,13 @@ async function sendMailViaSmtp(to, subject, html, attachmentPath = null, attachm
                   disposition: 'attachment'
                 });
               }
+            });
+          } else if (attachmentPath && typeof attachmentPath === 'object' && attachmentPath.content) {
+            sendgridAttachments.push({
+              content: attachmentPath.content,
+              filename: attachmentPath.name,
+              type: attachmentPath.type || 'application/octet-stream',
+              disposition: 'attachment'
             });
           } else if (fs.existsSync(attachmentPath)) {
             const name = attachmentName || 'RFQ_Attachment.xlsx';
@@ -208,13 +222,25 @@ async function sendMailViaSmtp(to, subject, html, attachmentPath = null, attachm
         if (attachmentPath) {
           if (Array.isArray(attachmentPath)) {
             attachmentPath.forEach((p, idx) => {
-              if (p && fs.existsSync(p)) {
+              if (p && typeof p === 'object' && p.content) {
+                attachments.push({
+                  filename: p.name,
+                  content: Buffer.from(p.content, 'base64'),
+                  contentType: p.type || 'application/octet-stream'
+                });
+              } else if (p && fs.existsSync(p)) {
                 const name = (Array.isArray(attachmentName) && attachmentName[idx]) || (typeof attachmentName === 'string' ? attachmentName : path.basename(p));
                 attachments.push({
                   filename: name,
                   path: p
                 });
               }
+            });
+          } else if (attachmentPath && typeof attachmentPath === 'object' && attachmentPath.content) {
+            attachments.push({
+              filename: attachmentPath.name,
+              content: Buffer.from(attachmentPath.content, 'base64'),
+              contentType: attachmentPath.type || 'application/octet-stream'
             });
           } else if (fs.existsSync(attachmentPath)) {
             attachments.push({
@@ -1720,7 +1746,7 @@ app.post('/api/rfqs/distribute', async (req, res) => {
     // Pre-build Excel Specifications sheet block if option is active
     let specSheetHtml = '';
     if (rfq.allow_spec_sheet && rfq.excel_filename) {
-      const downloadUrl = `${getFrontendUrl(req)}/api/rfqs/${rfq.id}/excel-download`;
+      const downloadUrl = `${getBackendUrl(req)}/api/rfqs/${rfq.id}/excel-download`;
       specSheetHtml = `
         <div style="background:#f0fdf4;padding:15px;border-radius:6px;margin:20px 0;border-left:4px solid #10b981;font-size:13px;border-top:1px solid #d1fae5;border-right:1px solid #d1fae5;border-bottom:1px solid #d1fae5;">
           <p style="margin:0 0 6px;font-weight:700;color:#065f46;">📋 Technical Specifications Sheet Attached</p>

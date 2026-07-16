@@ -491,7 +491,33 @@ class Database {
     };
   }
 
+  async flushPendingQuotes() {
+    if (this._pendingQuoteInserts) {
+      const keys = Object.keys(this._pendingQuoteInserts);
+      for (const key of keys) {
+        const [rfq_id, vendor_id] = key.split('|');
+        if (this._quoteFlushTimers && this._quoteFlushTimers[key]) {
+          clearTimeout(this._quoteFlushTimers[key]);
+          delete this._quoteFlushTimers[key];
+        }
+        const toInsert = this._pendingQuoteInserts[key] || [];
+        if (toInsert.length > 0) {
+          if (mongoose.connection.readyState === 1) {
+            try {
+              await VendorQuote.deleteMany({ rfq_id, vendor_id });
+              await VendorQuote.insertMany(toInsert);
+            } catch (err) {
+              console.error('[MongoDB Error] Manual bulk quote sync failed:', err.message);
+            }
+          }
+        }
+        delete this._pendingQuoteInserts[key];
+      }
+    }
+  }
+
   async waitForMongo() {
+    await this.flushPendingQuotes();
     if (global.mongoPromises && global.mongoPromises.length > 0) {
       await Promise.all(global.mongoPromises);
       global.mongoPromises.length = 0;
