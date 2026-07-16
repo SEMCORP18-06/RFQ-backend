@@ -290,6 +290,41 @@ class Database {
     }
   }
 
+  async wipeDatabase() {
+    this.data = {
+      vendors: [],
+      rfqs: [],
+      rfq_items: [],
+      rfq_distributions: [],
+      vendor_quotes: [],
+      audit_trail: [],
+      notifications: [],
+      users: [],
+      transporters: [],
+      transport_requests: [],
+      transport_request_items: [],
+      transport_distributions: []
+    };
+    this.save();
+
+    if (mongoose.connection.readyState === 1) {
+      await Promise.all([
+        Vendor.deleteMany({}),
+        Rfq.deleteMany({}),
+        RfqItem.deleteMany({}),
+        RfqDistribution.deleteMany({}),
+        VendorQuote.deleteMany({}),
+        AuditLog.deleteMany({}),
+        Notification.deleteMany({}),
+        User.deleteMany({}),
+        Transporter.deleteMany({}),
+        TransportRequest.deleteMany({}),
+        TransportRequestItem.deleteMany({}),
+        TransportDistribution.deleteMany({})
+      ]);
+    }
+  }
+
   async connectMongo(uri) {
     try {
       if (mongoose.connection.readyState === 1) {

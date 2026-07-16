@@ -1211,6 +1211,30 @@ app.post('/api/auth/users/clear', async (_req, res) => {
   }
 });
 
+app.post('/api/db/wipe', async (req, res) => {
+  try {
+    await db.wipeDatabase();
+    
+    // Clear uploaded files inside uploads directory
+    const uploadsDir = path.join(__dirname, 'uploads');
+    if (fs.existsSync(uploadsDir)) {
+      const files = fs.readdirSync(uploadsDir);
+      for (const f of files) {
+        if (f !== '.gitkeep') {
+          try {
+            fs.unlinkSync(path.join(uploadsDir, f));
+          } catch (_) {}
+        }
+      }
+    }
+
+    res.json({ success: true, message: 'All database tables, uploaded files, and users have been successfully wiped clean.' });
+  } catch (err) {
+    console.error('[Wipe Error]', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ═══════════════════════════════════════════════════════════
 //  VENDOR CRUD
 // ═══════════════════════════════════════════════════════════
