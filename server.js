@@ -975,10 +975,11 @@ app.get('/api/health', (_req, res) => {
   } catch (_) {}
   res.json({
     success: true,
-    database: mongoConnected ? 'connected' : 'connecting',
+    database: mongoose.connection.readyState === 1 ? 'connected' : (mongoose.connection.readyState === 2 ? 'connecting' : 'disconnected'),
     sendgrid: sendgridReady ? 'configured' : 'simulation',
     vendors: vendorCount,
-    rfqs: rfqCount
+    rfqs: rfqCount,
+    errors: global.mongoErrors || []
   });
 });
 

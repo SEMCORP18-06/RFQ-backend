@@ -693,7 +693,11 @@ class PreparedStatement {
 
       if (mongoose.connection.readyState === 1) {
         Vendor.findOneAndUpdate({ id }, newVendor, { upsert: true, returnDocument: 'after' }).exec()
-          .catch(err => console.error('[MongoDB Error] Vendor insert failed:', err.message));
+          .catch(err => {
+            console.error('[MongoDB Error] Vendor insert failed:', err.message);
+            global.mongoErrors = global.mongoErrors || [];
+            global.mongoErrors.push(`[Vendor Insert ${id}] ${err.message}`);
+          });
       }
       return;
     }
