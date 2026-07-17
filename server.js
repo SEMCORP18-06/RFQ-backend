@@ -509,6 +509,7 @@ app.use((req, res, next) => {
 
 // Middleware to ensure database is connected before processing request on Vercel
 let mongoConnectingPromise = null;
+let mongoConnectingError = null;
 let lastCacheRefresh = 0;
 const CACHE_REFRESH_TTL_MS = 2 * 1000; // refresh cache at most every 2s per container to maintain fresh data across serverless instances
 
@@ -516,17 +517,16 @@ app.use(async (req, res, next) => {
   if (process.env.MONGODB_URI) {
     if (mongoose.connection.readyState !== 1) {
       if (!mongoConnectingPromise) {
-        const promise = db.connectMongo(process.env.MONGODB_URI)
+        mongoConnectingError = null;
+        mongoConnectingPromise = db.connectMongo(process.env.MONGODB_URI)
           .then(() => {
             lastCacheRefresh = Date.now();
           })
           .catch(err => {
             console.error('[MongoDB Middleware Connection Error]:', err.message);
-            mongoConnectingPromise = null;
-            throw err;
+            mongoConnectingError = err;
+            mongoConnectingPromise = null; // reset so next request retries
           });
-        promise.catch(() => {}); // Prevent unhandledRejection crash for non-blocking requests
-        mongoConnectingPromise = promise;
       }
 
       // Do not block health check and portal verification endpoints on cold start.
@@ -537,10 +537,13 @@ app.use(async (req, res, next) => {
       if (!isNonBlocking) {
         try {
           await mongoConnectingPromise;
+          if (mongoConnectingError) {
+            throw mongoConnectingError;
+          }
         } catch (err) {
           return res.status(500).json({ 
             success: false, 
-            message: 'Database connection is initializing or failed. Please refresh or try again in a few seconds.' 
+            message: 'Database connection failed. Please refresh or try again in a few seconds.' 
           });
         }
       }
