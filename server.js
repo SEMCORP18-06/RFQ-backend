@@ -516,7 +516,7 @@ app.use(async (req, res, next) => {
   if (process.env.MONGODB_URI) {
     if (mongoose.connection.readyState !== 1) {
       if (!mongoConnectingPromise) {
-        mongoConnectingPromise = db.connectMongo(process.env.MONGODB_URI)
+        const promise = db.connectMongo(process.env.MONGODB_URI)
           .then(() => {
             lastCacheRefresh = Date.now();
           })
@@ -525,6 +525,8 @@ app.use(async (req, res, next) => {
             mongoConnectingPromise = null;
             throw err;
           });
+        promise.catch(() => {}); // Prevent unhandledRejection crash for non-blocking requests
+        mongoConnectingPromise = promise;
       }
 
       // Do not block health check and portal verification endpoints on cold start.
