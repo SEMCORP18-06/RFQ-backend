@@ -831,6 +831,139 @@ function cleanUpFile(filepath) {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  ROOT API STATUS VIEW
+// ═══════════════════════════════════════════════════════════
+app.get('/', (_req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>SEMCO Smart RFQ - API Service</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" rel="stylesheet">
+        <style>
+            body {
+                background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                color: #f1f5f9;
+                font-family: system-ui, -apple-system, sans-serif;
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .api-card {
+                background: rgba(30, 41, 59, 0.7);
+                backdrop-filter: blur(16px);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 20px;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+                padding: 3rem;
+                max-width: 580px;
+                width: 100%;
+                text-align: center;
+            }
+            .pulse-dot {
+                width: 12px;
+                height: 12px;
+                background-color: #10b981;
+                border-radius: 50%;
+                display: inline-block;
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+                animation: pulse 1.6s infinite;
+                vertical-align: middle;
+                margin-right: 8px;
+            }
+            @keyframes pulse {
+                0% {
+                    transform: scale(0.95);
+                    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+                }
+                70% {
+                    transform: scale(1);
+                    box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+                }
+                100% {
+                    transform: scale(0.95);
+                    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+                }
+            }
+            .status-badge {
+                background: rgba(16, 185, 129, 0.15);
+                color: #34d399;
+                border: 1px solid rgba(16, 185, 129, 0.2);
+                padding: 6px 16px;
+                border-radius: 30px;
+                font-weight: 600;
+                font-size: 0.85rem;
+                display: inline-flex;
+                align-items: center;
+            }
+            .btn-portal {
+                background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+                color: white;
+                border: none;
+                padding: 12px 28px;
+                font-weight: 600;
+                border-radius: 12px;
+                transition: transform 0.2s, box-shadow 0.2s;
+                text-decoration: none;
+                display: inline-block;
+            }
+            .btn-portal:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 20px rgba(37, 99, 235, 0.4);
+                color: white;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="api-card">
+            <div class="mb-4">
+                <i class="fa-solid fa-server text-primary mb-3" style="font-size: 3.5rem;"></i>
+                <h2 class="fw-bold text-white mb-1">SEMCO Smart RFQ API</h2>
+                <p class="text-secondary fs-8">Version 2.0.0 (Node.js & Express)</p>
+            </div>
+            
+            <div class="mb-4">
+                <span class="status-badge">
+                    <span class="pulse-dot"></span>
+                    API Service Operational
+                </span>
+            </div>
+
+            <div class="bg-dark bg-opacity-35 p-3 rounded-3 border border-secondary border-opacity-10 text-start mb-4">
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-secondary fs-9">Database Connection:</span>
+                    <span class="text-success fw-semibold fs-9"><i class="fa-solid fa-cloud me-1"></i> MongoDB Live</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-secondary fs-9">Email Gateway Status:</span>
+                    <span class="text-info fw-semibold fs-9">\${sendgridReady ? '<i class="fa-solid fa-circle-check me-1"></i> SendGrid' : '<i class="fa-solid fa-vial me-1"></i> Simulation Mode'}</span>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span class="text-secondary fs-9">Health Check Endpoint:</span>
+                    <a href="/api/health" class="text-primary text-decoration-none fw-semibold fs-9">/api/health <i class="fa-solid fa-arrow-up-right-from-square ms-1" style="font-size: 0.7rem;"></i></a>
+                </div>
+            </div>
+
+            <div>
+                <a href="https://semco-groups-procurement.vercel.app" target="_blank" class="btn-portal">
+                    <i class="fa-solid fa-laptop-code me-2"></i> Launch Procurement Portal
+                </a>
+            </div>
+            
+            <div class="mt-5 text-secondary fs-9">
+                SEMCO Groups &copy; 2026. All rights reserved.
+            </div>
+        </div>
+    </body>
+    </html>
+  `);
+});
+
+// ═══════════════════════════════════════════════════════════
 //  HEALTH CHECK
 // ═══════════════════════════════════════════════════════════
 app.get('/api/health', (_req, res) => {
