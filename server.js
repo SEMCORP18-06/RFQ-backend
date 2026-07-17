@@ -1942,28 +1942,12 @@ app.get('/api/vendor-portal/verify', async (req, res) => {
     let vendor = db.prepare('SELECT * FROM vendors WHERE id = ?').get(vendor_id);
 
     // Cold-start fallback: if the in-memory cache hasn't loaded yet, hit MongoDB directly
-    if ((!vendor || !rfq) && mongoose.connection.readyState === 1) {
+    if ((!vendor || !rfq) && db.isMongoConnected) {
       console.log('[Verify Link] In-memory cache miss — falling back to direct MongoDB lookup...');
       try {
-        if (!vendor) {
-          const mongoVendor = await Vendor.findOne({ id: vendor_id }).lean();
-          if (mongoVendor) {
-            vendor = mongoVendor;
-            // Also patch the cache so subsequent queries work
-            if (!db.db.data.vendors.find(v => v.id === vendor_id)) {
-              db.db.data.vendors.push(mongoVendor);
-            }
-          }
-        }
-        if (!rfq) {
-          const mongoRfq = await Rfq.findOne({ id: rfq_id }).lean();
-          if (mongoRfq) {
-            rfq = mongoRfq;
-            if (!db.db.data.rfqs.find(r => r.id === rfq_id)) {
-              db.db.data.rfqs.push(mongoRfq);
-            }
-          }
-        }
+        const lookup = await db.mongoFallbackLookup({ vendorId: vendor ? null : vendor_id, rfqId: rfq ? null : rfq_id });
+        if (lookup.vendor) vendor = lookup.vendor;
+        if (lookup.rfq) rfq = lookup.rfq;
       } catch (fallbackErr) {
         console.error('[Verify Link] MongoDB fallback failed:', fallbackErr.message);
       }
@@ -1983,15 +1967,10 @@ app.get('/api/vendor-portal/verify', async (req, res) => {
     let dist = db.prepare('SELECT * FROM rfq_distributions WHERE rfq_id = ? AND vendor_id = ?').get(rfq_id, vendor_id);
 
     // Cold-start fallback for distribution record
-    if (!dist && mongoose.connection.readyState === 1) {
+    if (!dist && db.isMongoConnected) {
       try {
-        const mongoDist = await RfqDistribution.findOne({ rfq_id, vendor_id }).lean();
-        if (mongoDist) {
-          dist = mongoDist;
-          if (!db.db.data.rfq_distributions.find(d => d.rfq_id === rfq_id && d.vendor_id === vendor_id)) {
-            db.db.data.rfq_distributions.push(mongoDist);
-          }
-        }
+        const lookup = await db.mongoFallbackLookup({ rfqId: rfq_id, rfqDistVendorId: vendor_id });
+        if (lookup.dist) dist = lookup.dist;
       } catch (distFallbackErr) {
         console.error('[Verify Link] MongoDB dist fallback failed:', distFallbackErr.message);
       }
@@ -3073,30 +3052,20 @@ app.get('/api/transporter-portal/verify', async (req, res) => {
     let dist = db.prepare('SELECT d.*, r.request_number, r.from_location, r.to_location, r.required_date, r.expires_at, r.status as request_status FROM transport_distributions d JOIN transport_requests r ON d.request_id = r.id WHERE d.token = ?').get(token);
 
     // Cold-start fallback: query MongoDB directly if cache is empty
-    if (!dist && mongoose.connection.readyState === 1) {
+    if (!dist && db.isMongoConnected) {
       try {
         console.log('[Transporter Verify] In-memory cache miss — falling back to MongoDB...');
-        const mongoDistRaw = await TransportDistribution.findOne({ token }).lean();
-        if (mongoDistRaw) {
-          const mongoReq = await TransportRequest.findOne({ id: mongoDistRaw.request_id }).lean();
-          if (mongoReq) {
-            dist = {
-              ...mongoDistRaw,
-              request_number: mongoReq.request_number,
-              from_location: mongoReq.from_location,
-              to_location: mongoReq.to_location,
-              required_date: mongoReq.required_date,
-              expires_at: mongoReq.expires_at,
-              request_status: mongoReq.status
-            };
-            // Patch the cache
-            if (!db.db.data.transport_distributions.find(d => d.token === token)) {
-              db.db.data.transport_distributions.push(mongoDistRaw);
-            }
-            if (!db.db.data.transport_requests.find(r => r.id === mongoReq.id)) {
-              db.db.data.transport_requests.push(mongoReq);
-            }
-          }
+        const lookup = await db.mongoFallbackLookup({ transportToken: token });
+        if (lookup.transportDist && lookup.transportRequest) {
+          dist = {
+            ...lookup.transportDist,
+            request_number: lookup.transportRequest.request_number,
+            from_location: lookup.transportRequest.from_location,
+            to_location: lookup.transportRequest.to_location,
+            required_date: lookup.transportRequest.required_date,
+            expires_at: lookup.transportRequest.expires_at,
+            request_status: lookup.transportRequest.status
+          };
         }
       } catch (tFallbackErr) {
         console.error('[Transporter Verify] MongoDB fallback failed:', tFallbackErr.message);

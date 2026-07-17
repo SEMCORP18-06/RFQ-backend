@@ -472,8 +472,60 @@ class Database {
     }
   }
 
+  // Fallback: directly query MongoDB for a single vendor/rfq/dist when in-memory cache is cold.
+  // Used by server.js verify endpoints to handle Vercel cold-start race conditions.
+  async mongoFallbackLookup({ vendorId, rfqId, rfqDistVendorId, transportToken } = {}) {
+    if (mongoose.connection.readyState !== 1) return {};
+    const result = {};
+    try {
+      if (vendorId) {
+        const v = await Vendor.findOne({ id: vendorId }).lean();
+        if (v) {
+          result.vendor = v;
+          if (!this.data.vendors.find(x => x.id === vendorId)) this.data.vendors.push(v);
+        }
+      }
+      if (rfqId) {
+        const r = await Rfq.findOne({ id: rfqId }).lean();
+        if (r) {
+          result.rfq = r;
+          if (!this.data.rfqs.find(x => x.id === rfqId)) this.data.rfqs.push(r);
+        }
+      }
+      if (rfqId && rfqDistVendorId) {
+        const d = await RfqDistribution.findOne({ rfq_id: rfqId, vendor_id: rfqDistVendorId }).lean();
+        if (d) {
+          result.dist = d;
+          if (!this.data.rfq_distributions.find(x => x.rfq_id === rfqId && x.vendor_id === rfqDistVendorId)) {
+            this.data.rfq_distributions.push(d);
+          }
+        }
+      }
+      if (transportToken) {
+        const td = await TransportDistribution.findOne({ token: transportToken }).lean();
+        if (td) {
+          result.transportDist = td;
+          if (!this.data.transport_distributions.find(x => x.token === transportToken)) {
+            this.data.transport_distributions.push(td);
+          }
+          if (td.request_id) {
+            const tr = await TransportRequest.findOne({ id: td.request_id }).lean();
+            if (tr) {
+              result.transportRequest = tr;
+              if (!this.data.transport_requests.find(x => x.id === tr.id)) this.data.transport_requests.push(tr);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[MongoDB Fallback Error]:', err.message);
+    }
+    return result;
+  }
 
-
+  get isMongoConnected() {
+    return mongoose.connection.readyState === 1;
+  }
 
   pragma(sql) {
     return this;
