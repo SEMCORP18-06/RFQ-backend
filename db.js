@@ -429,6 +429,7 @@ class Database {
     } catch (e) {
       console.error('[MongoDB] Connection or Sync Error:', e.message);
       console.warn('[MongoDB] Falling back to offline local JSON database mode.');
+      throw e;
     }
   }
 

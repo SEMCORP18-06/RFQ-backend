@@ -508,26 +508,26 @@ app.use((req, res, next) => {
 });
 
 // Middleware to ensure database is connected before processing request on Vercel
-let mongoConnected = false;
 let mongoConnectingPromise = null;
 let lastCacheRefresh = 0;
 const CACHE_REFRESH_TTL_MS = 2 * 1000; // refresh cache at most every 2s per container to maintain fresh data across serverless instances
 
 app.use(async (req, res, next) => {
   if (process.env.MONGODB_URI) {
-    if (!mongoConnected) {
+    if (mongoose.connection.readyState !== 1) {
       if (!mongoConnectingPromise) {
         mongoConnectingPromise = db.connectMongo(process.env.MONGODB_URI)
           .then(() => {
-            mongoConnected = true;
             lastCacheRefresh = Date.now();
           })
-          .catch(err => { console.error('[MongoDB Middleware Error]:', err.message); })
-          .finally(() => { mongoConnectingPromise = null; });
+          .catch(err => {
+            console.error('[MongoDB Middleware Connection Error]:', err.message);
+            mongoConnectingPromise = null;
+            throw err;
+          });
       }
-      
+
       // Do not block health check and portal verification endpoints on cold start.
-      // Health check is lightweight; verify routes utilize mongoose direct queries fallback.
       const path = req.path;
       const isNonBlocking = path === '/api/health' || 
                             path === '/api/vendor-portal/verify' || 
@@ -535,7 +535,12 @@ app.use(async (req, res, next) => {
       if (!isNonBlocking) {
         try {
           await mongoConnectingPromise;
-        } catch (_) {}
+        } catch (err) {
+          return res.status(500).json({ 
+            success: false, 
+            message: 'Database connection is initializing or failed. Please refresh or try again in a few seconds.' 
+          });
+        }
       }
     } else {
       // Sync cache from MongoDB to ensure multi-container coherence on Vercel
