@@ -525,9 +525,18 @@ app.use(async (req, res, next) => {
           .catch(err => { console.error('[MongoDB Middleware Error]:', err.message); })
           .finally(() => { mongoConnectingPromise = null; });
       }
-      try {
-        await mongoConnectingPromise;
-      } catch (_) {}
+      
+      // Do not block health check and portal verification endpoints on cold start.
+      // Health check is lightweight; verify routes utilize mongoose direct queries fallback.
+      const path = req.path;
+      const isNonBlocking = path === '/api/health' || 
+                            path === '/api/vendor-portal/verify' || 
+                            path === '/api/transporter-portal/verify';
+      if (!isNonBlocking) {
+        try {
+          await mongoConnectingPromise;
+        } catch (_) {}
+      }
     } else {
       // Sync cache from MongoDB to ensure multi-container coherence on Vercel
       // Only refresh if TTL has elapsed to avoid per-request MongoDB reads
@@ -825,11 +834,15 @@ function cleanUpFile(filepath) {
 //  HEALTH CHECK
 // ═══════════════════════════════════════════════════════════
 app.get('/api/health', (_req, res) => {
-  const vendorCount = db.prepare('SELECT count(*) AS c FROM vendors').get().c;
-  const rfqCount    = db.prepare('SELECT count(*) AS c FROM rfqs').get().c;
+  let vendorCount = 0;
+  let rfqCount = 0;
+  try {
+    vendorCount = db.prepare('SELECT count(*) AS c FROM vendors').get().c;
+    rfqCount    = db.prepare('SELECT count(*) AS c FROM rfqs').get().c;
+  } catch (_) {}
   res.json({
     success: true,
-    database: 'connected',
+    database: mongoConnected ? 'connected' : 'connecting',
     sendgrid: sendgridReady ? 'configured' : 'simulation',
     vendors: vendorCount,
     rfqs: rfqCount
