@@ -511,7 +511,7 @@ app.use((req, res, next) => {
 let mongoConnected = false;
 let mongoConnectingPromise = null;
 let lastCacheRefresh = 0;
-const CACHE_REFRESH_TTL_MS = 30 * 1000; // refresh cache at most every 30s per container
+const CACHE_REFRESH_TTL_MS = 2 * 1000; // refresh cache at most every 2s per container to maintain fresh data across serverless instances
 
 app.use(async (req, res, next) => {
   if (process.env.MONGODB_URI) {
