@@ -47,12 +47,13 @@ const getFrontendUrl = (req) => {
 
 const getBackendUrl = (req) => {
   if (process.env.BACKEND_URL) return process.env.BACKEND_URL;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   if (req && req.headers && req.headers.host) {
-    const protocol = (req.secure || req.headers['x-forwarded-proto'] === 'https') ? 'https' : 'http';
-    return `${protocol}//${req.headers.host}`;
+    const host = req.headers.host;
+    if (host.includes('localhost') || host.includes('127.0.0.1')) {
+      return `http://${host}`;
+    }
   }
-  return `http://localhost:${PORT}`;
+  return 'https://rfq-backend.vercel.app';
 };
 
 const formatDateTimeIST = (date) => {
@@ -154,49 +155,54 @@ function convertHtmlToText(html) {
 async function sendMailViaSmtp(to, subject, html, attachmentPath = null, attachmentName = null) {
   try {
     const plainText = convertHtmlToText(html);
+    const normalizedAttachments = [];
 
-    if (sendgridReady) {
-      try {
-        const sendgridAttachments = [];
-        if (attachmentPath) {
-          if (Array.isArray(attachmentPath)) {
-            attachmentPath.forEach((p, idx) => {
-              if (p && typeof p === 'object' && p.content) {
-                sendgridAttachments.push({
-                  content: p.content,
-                  filename: p.name,
-                  type: p.type || 'application/octet-stream',
-                  disposition: 'attachment'
-                });
-              } else if (p && fs.existsSync(p)) {
-                const name = (Array.isArray(attachmentName) && attachmentName[idx]) || (typeof attachmentName === 'string' ? attachmentName : path.basename(p));
-                const content = fs.readFileSync(p).toString('base64');
-                sendgridAttachments.push({
-                  content: content,
-                  filename: name,
-                  type: 'application/octet-stream',
-                  disposition: 'attachment'
-                });
-              }
+    if (attachmentPath) {
+      const rawArray = Array.isArray(attachmentPath) ? attachmentPath : [attachmentPath];
+      rawArray.forEach((item, idx) => {
+        if (!item) return;
+        if (typeof item === 'string') {
+          if (fs.existsSync(item)) {
+            const name = (Array.isArray(attachmentName) && attachmentName[idx]) || (typeof attachmentName === 'string' ? attachmentName : path.basename(item));
+            normalizedAttachments.push({ path: item, name: name });
+          }
+        } else if (typeof item === 'object') {
+          if (item.content) {
+            normalizedAttachments.push({
+              content: item.content,
+              name: item.name || item.filename || 'Attachment',
+              type: item.type || 'application/octet-stream'
             });
-          } else if (attachmentPath && typeof attachmentPath === 'object' && attachmentPath.content) {
-            sendgridAttachments.push({
-              content: attachmentPath.content,
-              filename: attachmentPath.name,
-              type: attachmentPath.type || 'application/octet-stream',
-              disposition: 'attachment'
-            });
-          } else if (fs.existsSync(attachmentPath)) {
-            const name = attachmentName || 'RFQ_Attachment.xlsx';
-            const content = fs.readFileSync(attachmentPath).toString('base64');
-            sendgridAttachments.push({
-              content: content,
-              filename: name,
-              type: 'application/octet-stream',
-              disposition: 'attachment'
+          } else if (item.path && fs.existsSync(item.path)) {
+            normalizedAttachments.push({
+              path: item.path,
+              name: item.name || item.filename || path.basename(item.path)
             });
           }
         }
+      });
+    }
+
+    if (sendgridReady) {
+      try {
+        const sendgridAttachments = normalizedAttachments.map(att => {
+          if (att.content) {
+            return {
+              content: att.content,
+              filename: att.name,
+              type: att.type,
+              disposition: 'attachment'
+            };
+          } else {
+            const content = fs.readFileSync(att.path).toString('base64');
+            return {
+              content: content,
+              filename: att.name,
+              type: 'application/octet-stream',
+              disposition: 'attachment'
+            };
+          }
+        });
 
         const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'rfq@semcogroups.com';
         const fromName = process.env.SENDGRID_FROM_NAME || 'Umesh Patil SEMCO Groups';
@@ -228,37 +234,20 @@ async function sendMailViaSmtp(to, subject, html, attachmentPath = null, attachm
 
     if (SMTP_CONFIGURED) {
       try {
-        const attachments = [];
-        if (attachmentPath) {
-          if (Array.isArray(attachmentPath)) {
-            attachmentPath.forEach((p, idx) => {
-              if (p && typeof p === 'object' && p.content) {
-                attachments.push({
-                  filename: p.name,
-                  content: Buffer.from(p.content, 'base64'),
-                  contentType: p.type || 'application/octet-stream'
-                });
-              } else if (p && fs.existsSync(p)) {
-                const name = (Array.isArray(attachmentName) && attachmentName[idx]) || (typeof attachmentName === 'string' ? attachmentName : path.basename(p));
-                attachments.push({
-                  filename: name,
-                  path: p
-                });
-              }
-            });
-          } else if (attachmentPath && typeof attachmentPath === 'object' && attachmentPath.content) {
-            attachments.push({
-              filename: attachmentPath.name,
-              content: Buffer.from(attachmentPath.content, 'base64'),
-              contentType: attachmentPath.type || 'application/octet-stream'
-            });
-          } else if (fs.existsSync(attachmentPath)) {
-            attachments.push({
-              filename: attachmentName || 'RFQ_Attachment.xlsx',
-              path: attachmentPath
-            });
+        const SMTP_ATTACHMENTS = normalizedAttachments.map(att => {
+          if (att.content) {
+            return {
+              filename: att.name,
+              content: Buffer.from(att.content, 'base64'),
+              contentType: att.type
+            };
+          } else {
+            return {
+              filename: att.name,
+              path: att.path
+            };
           }
-        }
+        });
 
         const fromEmail = process.env.SMTP_USER || 'umesh.p@semcogroups.com';
 
@@ -268,7 +257,7 @@ async function sendMailViaSmtp(to, subject, html, attachmentPath = null, attachm
           subject: subject,
           html: html,
           text: plainText,
-          attachments: attachments,
+          attachments: SMTP_ATTACHMENTS,
           headers: {
             'X-Priority': '3',
             'X-MSMail-Priority': 'Normal',
@@ -1834,7 +1823,17 @@ app.post('/api/rfqs/distribute', async (req, res) => {
       const recipientEmail = vendor.email;
 
       try {
-        mailSent = await sendMailViaSmtp(recipientEmail, subject, emailHtml, rfq.excel_path, rfq.excel_filename);
+        let attachmentObj = null;
+        if (rfq.excel_base64) {
+          attachmentObj = {
+            content: rfq.excel_base64,
+            name: rfq.excel_filename || 'Specification_Sheet.xlsx',
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          };
+        } else if (rfq.excel_path) {
+          attachmentObj = rfq.excel_path;
+        }
+        mailSent = await sendMailViaSmtp(recipientEmail, subject, emailHtml, attachmentObj, rfq.excel_filename);
         if (!mailSent) {
           errorMsg = 'SMTP_FAILED';
         }
@@ -2100,7 +2099,8 @@ app.post('/api/vendor-portal/upload-doc', upload.array('files', 10), (req, res) 
       const destPath = path.join(UPLOAD_DIR, destName);
 
       fsSync.renameSync(file.path, destPath);
-      savedDocsList.push({ name: file.originalname, path: destPath });
+      const base64Data = fsSync.readFileSync(destPath).toString('base64');
+      savedDocsList.push({ name: file.originalname, path: destPath, content: base64Data });
     });
 
     const firstDoc = savedDocsList[0];
@@ -2434,7 +2434,7 @@ app.get('/api/vendors/:id/submissions', (req, res) => {
       SELECT q.*, r.rfq_number, r.project_name, i.description, i.moc, i.size, i.quantity, i.unit, 
              d.final_cost, d.cgst_applicable, d.sgst_applicable, d.transport_included, 
              d.transport_packaging, d.transport_freight, d.transport_loading, d.transport_other,
-             d.payment_terms
+             d.payment_terms, d.vendor_doc_name, d.vendor_doc_path, d.vendor_docs
       FROM vendor_quotes q
       JOIN rfqs r ON q.rfq_id = r.id
       JOIN rfq_items i ON q.item_id = i.id
@@ -2456,7 +2456,7 @@ app.get('/api/submissions', (_req, res) => {
              r.rfq_number, r.project_name, i.description, i.moc, i.make, i.size, i.quantity, i.unit, 
              v.name as vendor_name, d.final_cost, d.cgst_applicable, d.sgst_applicable, d.submitted_at,
              d.transport_included, d.transport_packaging, d.transport_freight, d.transport_loading, d.transport_other,
-             d.payment_terms
+             d.payment_terms, d.vendor_doc_name, d.vendor_doc_path, d.vendor_docs
       FROM vendor_quotes q
       JOIN rfqs r ON q.rfq_id = r.id
       JOIN rfq_items i ON q.item_id = i.id
@@ -2466,6 +2466,43 @@ app.get('/api/submissions', (_req, res) => {
       ORDER BY d.submitted_at DESC
     `).all();
     res.json({ success: true, data: quotes });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET download vendor uploaded document
+app.get('/api/submissions/download-document', (req, res) => {
+  try {
+    const { rfq_id, vendor_id, doc_name } = req.query;
+    if (!rfq_id || !vendor_id || !doc_name) {
+      return res.status(400).json({ success: false, message: 'Missing parameters.' });
+    }
+    
+    const dist = db.prepare('SELECT vendor_docs FROM rfq_distributions WHERE rfq_id = ? AND vendor_id = ?').get(rfq_id, vendor_id);
+    if (!dist || !dist.vendor_docs) {
+      return res.status(404).json({ success: false, message: 'No documents found.' });
+    }
+    
+    const docs = JSON.parse(dist.vendor_docs);
+    const doc = docs.find(d => d.name === doc_name);
+    if (!doc) {
+      return res.status(404).json({ success: false, message: 'Document not found in list.' });
+    }
+    
+    if (doc.content) {
+      const fileBuffer = Buffer.from(doc.content, 'base64');
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc_name)}"`);
+      res.setHeader('Content-Type', 'application/octet-stream');
+      return res.send(fileBuffer);
+    }
+    
+    if (doc.path && require('fs').existsSync(doc.path)) {
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc_name)}"`);
+      return res.sendFile(doc.path);
+    }
+    
+    return res.status(404).json({ success: false, message: 'Document content not found on server.' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
